@@ -35,7 +35,9 @@ export default function App() {
         />
         <AuthProvider>
           <CartProvider>
-            <AppNavigator />
+            <AIProvider>
+              <AppNavigator />
+            </AIProvider>
           </CartProvider>
         </AuthProvider>
       </PaperProvider>

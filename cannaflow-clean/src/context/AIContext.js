@@ -2,7 +2,13 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { processCommand, speakResponse } from '../services/aiAssistant';
-import { initComplianceEngine } from '../services/complianceEngine';
+import { 
+  initComplianceEngine, 
+  getComplianceSettings, 
+  updateComplianceSettings,
+  getUpcomingDeadlines,
+  checkComplianceStatus
+} from '../services/complianceEngine';
 
 // Create context
 const AIContext = createContext();
@@ -16,143 +22,261 @@ const DEFAULT_AI_SETTINGS = {
   cloudEnabled: false,
   voiceEnabled: true,
   autoRespond: true,
-  minimized: true
+  minimized: true,
+  theme: 'green',
+  fontSize: 'medium',
+  showIntents: true,
+  conversationHistory: true,
+  maxHistoryItems: 50,
+  contextAwareness: true
 };
 
-/**
- * AI Context Provider
- * @param {Object} props - Provider props
- */
-export const AIProvider = ({ children }) => {
+// AIProvider component
+const AIProvider = ({ children }) => {
+  // AI Assistant state
   const [aiSettings, setAISettings] = useState(DEFAULT_AI_SETTINGS);
-  const [isAIVisible, setIsAIVisible] = useState(false);
-  const [isComplianceVisible, setIsComplianceVisible] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [conversationHistory, setConversationHistory] = useState([]);
+  const [contextData, setContextData] = useState({});
   
-  // Initialize AI and compliance engine
+  // Compliance Engine state
+  const [complianceSettings, setComplianceSettings] = useState(null);
+  const [complianceStatus, setComplianceStatus] = useState(null);
+  const [upcomingDeadlines, setUpcomingDeadlines] = useState([]);
+  const [hasComplianceAlerts, setHasComplianceAlerts] = useState(false);
+  
+  // Initialize on component mount
   useEffect(() => {
-    const initialize = async () => {
-      try {
-        // Load AI settings
-        const storedSettings = await AsyncStorage.getItem(AI_SETTINGS_KEY);
-        if (storedSettings) {
-          setAISettings(JSON.parse(storedSettings));
+    initializeAI();
+    initializeCompliance();
+  }, []);
+
+  // Check for compliance alerts
+  useEffect(() => {
+    if (upcomingDeadlines && upcomingDeadlines.length > 0) {
+      // Check if any deadlines are within the next 7 days
+      const today = new Date();
+      const nextWeek = new Date();
+      nextWeek.setDate(today.getDate() + 7);
+      
+      const urgentDeadlines = upcomingDeadlines.filter(deadline => {
+        const deadlineDate = new Date(deadline.date);
+        return deadlineDate >= today && deadlineDate <= nextWeek;
+      });
+      
+      setHasComplianceAlerts(urgentDeadlines.length > 0);
+      
+      // Show alert for urgent deadlines if enabled
+      if (urgentDeadlines.length > 0 && complianceSettings?.notifyDays > 0) {
+        const nextDeadline = urgentDeadlines[0];
+        const daysUntil = Math.ceil((new Date(nextDeadline.date) - today) / (1000 * 60 * 60 * 24));
+        
+        Alert.alert(
+          'Compliance Deadline Approaching',
+          `${nextDeadline.description} is due in ${daysUntil} day${daysUntil !== 1 ? 's' : ''}.`,
+          [
+            { text: 'Dismiss', style: 'cancel' },
+            { text: 'View Details', onPress: () => console.log('View compliance details') }
+          ]
+        );
+      }
+    }
+  }, [upcomingDeadlines, complianceSettings]);
+
+  // Initialize AI Assistant
+  const initializeAI = async () => {
+    try {
+      // Load saved settings
+      const savedSettings = await AsyncStorage.getItem(AI_SETTINGS_KEY);
+      if (savedSettings) {
+        setAISettings(JSON.parse(savedSettings));
+      }
+      
+      // Load conversation history
+      const savedHistory = await AsyncStorage.getItem('@cannabis_pos_conversation_history');
+      if (savedHistory) {
+        setConversationHistory(JSON.parse(savedHistory));
+      }
+      
+      setIsInitialized(true);
+    } catch (error) {
+      console.error('Error initializing AI Assistant:', error);
+      setIsInitialized(true); // Continue with defaults
+    }
+  };
+
+  // Initialize Compliance Engine
+  const initializeCompliance = async () => {
+    try {
+      // Initialize compliance engine
+      const settings = await initComplianceEngine();
+      setComplianceSettings(settings);
+      
+      // Get compliance status
+      const status = await checkComplianceStatus();
+      setComplianceStatus(status);
+      
+      // Get upcoming deadlines
+      const deadlines = await getUpcomingDeadlines(30); // Next 30 days
+      setUpcomingDeadlines(deadlines);
+    } catch (error) {
+      console.error('Error initializing Compliance Engine:', error);
+    }
+  };
+
+  // Update AI settings
+  const updateAISettings = async (newSettings) => {
+    try {
+      const updatedSettings = { ...aiSettings, ...newSettings };
+      setAISettings(updatedSettings);
+      await AsyncStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(updatedSettings));
+    } catch (error) {
+      console.error('Error updating AI settings:', error);
+    }
+  };
+
+  // Process command with context awareness
+  const processCommandWithContext = async (command) => {
+    try {
+      // Add context data to enhance command processing
+      const result = await processCommand(command, contextData);
+      
+      // Update conversation history
+      if (aiSettings.conversationHistory) {
+        const newHistoryItem = {
+          id: Date.now().toString(),
+          command,
+          response: result.response,
+          timestamp: new Date().toISOString(),
+          intent: result.type
+        };
+        
+        const updatedHistory = [
+          ...conversationHistory, 
+          newHistoryItem
+        ].slice(-aiSettings.maxHistoryItems);
+        
+        setConversationHistory(updatedHistory);
+        await AsyncStorage.setItem('@cannabis_pos_conversation_history', JSON.stringify(updatedHistory));
+      }
+      
+      // Update context data based on the result
+      if (aiSettings.contextAwareness) {
+        const newContextData = { ...contextData };
+        
+        // Update context based on intent
+        switch (result.type) {
+          case 'add_to_cart':
+            newContextData.lastProduct = result.parsedCommand.productName || result.parsedCommand.productType;
+            newContextData.lastAction = 'add_to_cart';
+            break;
+          case 'show_inventory':
+            newContextData.lastCategory = result.parsedCommand.filter;
+            newContextData.lastAction = 'show_inventory';
+            break;
+          case 'open_float':
+            newContextData.floatOpen = true;
+            newContextData.floatAmount = result.parsedCommand.amount;
+            newContextData.lastAction = 'open_float';
+            break;
+          case 'close_float':
+            newContextData.floatOpen = false;
+            newContextData.lastAction = 'close_float';
+            break;
+          default:
+            newContextData.lastAction = result.type;
         }
         
-        // Initialize compliance engine
-        await initComplianceEngine();
-        
-        setIsInitialized(true);
-      } catch (error) {
-        console.error('Error initializing AI context:', error);
-        Alert.alert(
-          'Initialization Error',
-          'Failed to initialize AI assistant or compliance engine. Some features may not work correctly.'
-        );
-        setIsInitialized(true); // Set to true anyway to avoid blocking the app
-      }
-    };
-    
-    initialize();
-  }, []);
-  
-  // Save settings when they change
-  useEffect(() => {
-    if (isInitialized) {
-      AsyncStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(aiSettings))
-        .catch(error => console.error('Error saving AI settings:', error));
-    }
-  }, [aiSettings, isInitialized]);
-  
-  /**
-   * Update AI settings
-   * @param {Object} newSettings - New settings to apply
-   */
-  const updateAISettings = (newSettings) => {
-    setAISettings(prevSettings => ({
-      ...prevSettings,
-      ...newSettings
-    }));
-  };
-  
-  /**
-   * Toggle AI assistant visibility
-   * @param {boolean} visible - Whether to show or hide the assistant
-   */
-  const toggleAIAssistant = (visible = !isAIVisible) => {
-    setIsAIVisible(visible);
-    
-    // If showing the assistant, hide the compliance dashboard
-    if (visible && isComplianceVisible) {
-      setIsComplianceVisible(false);
-    }
-  };
-  
-  /**
-   * Toggle compliance dashboard visibility
-   * @param {boolean} visible - Whether to show or hide the dashboard
-   */
-  const toggleComplianceDashboard = (visible = !isComplianceVisible) => {
-    setIsComplianceVisible(visible);
-    
-    // If showing the dashboard, hide the AI assistant
-    if (visible && isAIVisible) {
-      setIsAIVisible(false);
-    }
-  };
-  
-  /**
-   * Process a command through the AI assistant
-   * @param {string} command - The command to process
-   * @param {Object} callbacks - Callback functions for different actions
-   * @returns {Promise<Object>} Result of the command processing
-   */
-  const handleCommand = async (command, callbacks = {}) => {
-    try {
-      // Process the command
-      const result = await processCommand(command, callbacks);
-      
-      // Speak the response if voice is enabled
-      if (aiSettings.voiceEnabled && result.response) {
-        speakResponse(result.response);
+        setContextData(newContextData);
       }
       
       return result;
     } catch (error) {
-      console.error('Error handling command:', error);
-      return {
-        success: false,
-        message: 'Error processing command',
-        response: "Sorry, there was an error processing your command. Please try again.",
-        error
-      };
+      console.error('Error processing command with context:', error);
+      throw error;
     }
   };
-  
-  // Context value
-  const value = {
-    aiSettings,
-    updateAISettings,
-    isAIVisible,
-    toggleAIAssistant,
-    isComplianceVisible,
-    toggleComplianceDashboard,
-    handleCommand,
-    isInitialized
+
+  // Clear conversation history
+  const clearConversationHistory = async () => {
+    try {
+      setConversationHistory([]);
+      await AsyncStorage.removeItem('@cannabis_pos_conversation_history');
+    } catch (error) {
+      console.error('Error clearing conversation history:', error);
+    }
   };
-  
+
+  // Update compliance settings
+  const updateComplianceSettingsWithRefresh = async (newSettings) => {
+    try {
+      const updatedSettings = await updateComplianceSettings(newSettings);
+      setComplianceSettings(updatedSettings);
+      
+      // Refresh compliance status and deadlines
+      const status = await checkComplianceStatus();
+      setComplianceStatus(status);
+      
+      const deadlines = await getUpcomingDeadlines(30);
+      setUpcomingDeadlines(deadlines);
+      
+      return updatedSettings;
+    } catch (error) {
+      console.error('Error updating compliance settings:', error);
+      throw error;
+    }
+  };
+
+  // Refresh compliance data
+  const refreshComplianceData = async () => {
+    try {
+      const status = await checkComplianceStatus();
+      setComplianceStatus(status);
+      
+      const deadlines = await getUpcomingDeadlines(30);
+      setUpcomingDeadlines(deadlines);
+      
+      return { status, deadlines };
+    } catch (error) {
+      console.error('Error refreshing compliance data:', error);
+      throw error;
+    }
+  };
+
+  // Context value
+  const contextValue = {
+    // AI Assistant
+    aiSettings,
+    isInitialized,
+    conversationHistory,
+    contextData,
+    updateAISettings,
+    processCommandWithContext,
+    clearConversationHistory,
+    
+    // Compliance Engine
+    complianceSettings,
+    complianceStatus,
+    upcomingDeadlines,
+    hasComplianceAlerts,
+    updateComplianceSettings: updateComplianceSettingsWithRefresh,
+    refreshComplianceData
+  };
+
   return (
-    <AIContext.Provider value={value}>
+    <AIContext.Provider value={contextValue}>
       {children}
     </AIContext.Provider>
   );
 };
 
 // Custom hook for using the AI context
-export const useAI = () => {
+const useAI = () => {
   const context = useContext(AIContext);
   if (!context) {
     throw new Error('useAI must be used within an AIProvider');
   }
   return context;
 };
+
+export { AIContext, AIProvider, useAI };

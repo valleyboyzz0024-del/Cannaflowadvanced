@@ -1,941 +1,994 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import {
   View,
   Text,
+  StyleSheet,
   ScrollView,
   TouchableOpacity,
-  StyleSheet,
+  ActivityIndicator,
   Alert,
   Platform
 } from 'react-native';
-import { 
-  Surface, 
-  Button, 
-  IconButton, 
-  Divider, 
-  Menu, 
-  Chip,
-  ActivityIndicator
-} from 'react-native-paper';
-import { theme } from '../theme/theme';
+import { useTheme } from 'react-native-paper';
+import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { LineChart, BarChart, PieChart } from 'react-native-chart-kit';
+import { Dimensions } from 'react-native';
+import { AIContext } from '../context/AIContext';
 import {
-  getComplianceSettings,
-  updateComplianceSettings,
   getComplianceLogs,
-  exportComplianceLogs,
-  generateDailySummary,
-  checkComplianceIssues,
-  getRetentionStatus,
-  archiveExpiredLogs,
-  PROVINCES,
+  getComplianceStats,
+  exportLogs,
   EXPORT_FORMATS,
-  LOG_TYPES
+  LOG_TYPES,
+  checkComplianceStatus,
+  getUpcomingDeadlines,
+  PROVINCES
 } from '../services/complianceEngine';
 
-/**
- * Compliance Dashboard Component
- * @param {Object} props - Component props
- * @param {boolean} props.visible - Whether the dashboard is visible
- * @param {Function} props.onClose - Callback for closing the dashboard
- */
-const ComplianceDashboard = ({ visible = true, onClose }) => {
+const screenWidth = Dimensions.get('window').width;
+
+const ComplianceDashboard = ({ onClose }) => {
+  const theme = useTheme();
+  const { complianceSettings } = useContext(AIContext);
+  
   const [activeTab, setActiveTab] = useState('overview');
-  const [settings, setSettings] = useState(null);
-  const [logs, setLogs] = useState([]);
-  const [issues, setIssues] = useState([]);
-  const [retentionStatus, setRetentionStatus] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [stats, setStats] = useState(null);
+  const [complianceStatus, setComplianceStatus] = useState(null);
+  const [upcomingDeadlines, setUpcomingDeadlines] = useState([]);
+  const [dateRange, setDateRange] = useState({
+    startDate: new Date(new Date().setDate(new Date().getDate() - 30)), // Last 30 days
+    endDate: new Date()
+  });
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [datePickerMode, setDatePickerMode] = useState('start'); // 'start' or 'end'
+  const [exportFormat, setExportFormat] = useState(EXPORT_FORMATS.PDF);
   const [isExporting, setIsExporting] = useState(false);
-  const [provinceMenuVisible, setProvinceMenuVisible] = useState(false);
-  const [exportMenuVisible, setExportMenuVisible] = useState(false);
-  const [filterMenuVisible, setFilterMenuVisible] = useState(false);
-  const [selectedLogType, setSelectedLogType] = useState(null);
   
-  // Load initial data
   useEffect(() => {
-    if (visible) {
-      loadDashboardData();
-    }
-  }, [visible]);
+    loadData();
+  }, [dateRange]);
   
-  // Load all dashboard data
-  const loadDashboardData = async () => {
-    setIsLoading(true);
-    try {
-      // Load settings
-      const complianceSettings = await getComplianceSettings();
-      setSettings(complianceSettings);
-      
-      // Load recent logs
-      const recentLogs = await getComplianceLogs({ limit: 10 });
-      setLogs(recentLogs);
-      
-      // Check for compliance issues
-      const complianceIssues = await checkComplianceIssues();
-      setIssues(complianceIssues);
-      
-      // Get retention status
-      const retention = await getRetentionStatus();
-      setRetentionStatus(retention);
-    } catch (error) {
-      console.error('Error loading compliance dashboard data:', error);
-      Alert.alert('Error', 'Failed to load compliance data');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-  
-  // Update province setting
-  const handleProvinceChange = async (province) => {
-    try {
-      await updateComplianceSettings({ province });
-      setSettings(prevSettings => ({ ...prevSettings, province }));
-      setProvinceMenuVisible(false);
-      
-      // Reload issues as they may change based on province
-      const complianceIssues = await checkComplianceIssues();
-      setIssues(complianceIssues);
-    } catch (error) {
-      console.error('Error updating province:', error);
-      Alert.alert('Error', 'Failed to update province setting');
-    }
-  };
-  
-  // Update export format setting
-  const handleExportFormatChange = async (format) => {
-    try {
-      await updateComplianceSettings({ exportFormat: format });
-      setSettings(prevSettings => ({ ...prevSettings, exportFormat: format }));
-      setExportMenuVisible(false);
-    } catch (error) {
-      console.error('Error updating export format:', error);
-      Alert.alert('Error', 'Failed to update export format setting');
-    }
-  };
-  
-  // Generate daily summary
-  const handleGenerateSummary = async () => {
+  const loadData = async () => {
     try {
       setIsLoading(true);
-      const today = new Date().toISOString().split('T')[0];
-      await generateDailySummary(today);
       
-      // Reload logs and issues
-      const recentLogs = await getComplianceLogs({ limit: 10 });
-      setLogs(recentLogs);
+      // Get compliance statistics
+      const statsData = await getComplianceStats(
+        dateRange.startDate.toISOString(),
+        dateRange.endDate.toISOString()
+      );
+      setStats(statsData);
       
-      const complianceIssues = await checkComplianceIssues();
-      setIssues(complianceIssues);
+      // Check compliance status
+      const status = await checkComplianceStatus();
+      setComplianceStatus(status);
       
-      Alert.alert('Success', 'Daily summary generated successfully');
+      // Get upcoming deadlines
+      const deadlines = await getUpcomingDeadlines(30); // Next 30 days
+      setUpcomingDeadlines(deadlines);
+      
+      setIsLoading(false);
     } catch (error) {
-      console.error('Error generating daily summary:', error);
-      Alert.alert('Error', 'Failed to generate daily summary');
-    } finally {
+      console.error('Error loading compliance data:', error);
+      Alert.alert('Error', 'Failed to load compliance data');
       setIsLoading(false);
     }
   };
   
-  // Export logs
-  const handleExportLogs = async () => {
+  const handleExport = async () => {
     try {
       setIsExporting(true);
       
-      const format = settings?.exportFormat || EXPORT_FORMATS.CSV;
-      const result = await exportComplianceLogs({
-        format,
-        logType: selectedLogType,
-        share: Platform.OS !== 'web'
+      const fileUri = await exportLogs(exportFormat, {
+        startDate: dateRange.startDate.toISOString(),
+        endDate: dateRange.endDate.toISOString()
       });
       
-      if (Platform.OS === 'web') {
-        // For web, create a download link
-        const blob = new Blob([result.data], { 
-          type: format === EXPORT_FORMATS.JSON ? 'application/json' : 
-                format === EXPORT_FORMATS.XML ? 'application/xml' : 
-                'text/csv' 
-        });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = result.filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }
-      
-      Alert.alert('Success', `Logs exported successfully${Platform.OS !== 'web' ? ' and ready to share' : ''}`);
+      setIsExporting(false);
+      Alert.alert('Success', `Logs exported successfully as ${exportFormat.toUpperCase()}`);
     } catch (error) {
       console.error('Error exporting logs:', error);
-      Alert.alert('Error', 'Failed to export logs');
-    } finally {
+      Alert.alert('Error', `Failed to export logs: ${error.message}`);
       setIsExporting(false);
     }
   };
   
-  // Archive expired logs
-  const handleArchiveLogs = async () => {
-    try {
-      setIsLoading(true);
-      const result = await archiveExpiredLogs();
-      
-      // Reload retention status
-      const retention = await getRetentionStatus();
-      setRetentionStatus(retention);
-      
-      Alert.alert('Success', result.message);
-    } catch (error) {
-      console.error('Error archiving logs:', error);
-      Alert.alert('Error', 'Failed to archive logs');
-    } finally {
-      setIsLoading(false);
+  const handleDateChange = (event, selectedDate) => {
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
+    }
+    
+    if (selectedDate) {
+      setDateRange(prev => ({
+        ...prev,
+        [datePickerMode === 'start' ? 'startDate' : 'endDate']: selectedDate
+      }));
     }
   };
   
-  // Filter logs by type
-  const handleFilterByType = async (type) => {
-    try {
-      setIsLoading(true);
-      setSelectedLogType(type);
-      setFilterMenuVisible(false);
-      
-      const filteredLogs = await getComplianceLogs({
-        type,
-        limit: 10
-      });
-      
-      setLogs(filteredLogs);
-    } catch (error) {
-      console.error('Error filtering logs:', error);
-      Alert.alert('Error', 'Failed to filter logs');
-    } finally {
-      setIsLoading(false);
-    }
+  const showDatePickerModal = (mode) => {
+    setDatePickerMode(mode);
+    setShowDatePicker(true);
   };
   
-  // Clear log filter
-  const handleClearFilter = async () => {
-    try {
-      setIsLoading(true);
-      setSelectedLogType(null);
-      
-      const recentLogs = await getComplianceLogs({ limit: 10 });
-      setLogs(recentLogs);
-    } catch (error) {
-      console.error('Error clearing filter:', error);
-      Alert.alert('Error', 'Failed to clear filter');
-    } finally {
-      setIsLoading(false);
+  const renderOverviewTab = () => {
+    if (!stats || !complianceStatus) {
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+          <Text style={styles.loadingText}>Loading compliance data...</Text>
+        </View>
+      );
     }
-  };
-  
-  // Resolve a compliance issue
-  const handleResolveIssue = async (issue) => {
-    try {
-      setIsLoading(true);
-      
-      switch (issue.action) {
-        case 'generate_summary':
-          await generateDailySummary(issue.actionParams.date);
-          break;
-          
-        case 'update_sales_tax':
-          // This would require a more complex implementation
-          Alert.alert('Not Implemented', 'This action requires manual intervention');
-          break;
-          
-        case 'add_french_descriptions':
-          // This would require a more complex implementation
-          Alert.alert('Not Implemented', 'This action requires manual intervention');
-          break;
-          
-        default:
-          Alert.alert('Unknown Action', 'This issue cannot be automatically resolved');
-          break;
-      }
-      
-      // Reload issues
-      const complianceIssues = await checkComplianceIssues();
-      setIssues(complianceIssues);
-    } catch (error) {
-      console.error('Error resolving issue:', error);
-      Alert.alert('Error', 'Failed to resolve issue');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-  
-  // Render loading state
-  if (isLoading && !settings) {
+    
+    // Prepare chart data
+    const salesData = {
+      labels: Object.keys(stats.salesByCategory).slice(0, 5), // Top 5 categories
+      datasets: [
+        {
+          data: Object.values(stats.salesByCategory).map(item => item.total).slice(0, 5),
+          color: (opacity = 1) => `rgba(46, 125, 50, ${opacity})`,
+          strokeWidth: 2
+        }
+      ],
+      legend: ['Sales by Category']
+    };
+    
+    const logCountData = {
+      labels: Object.keys(stats.logCounts).filter(key => stats.logCounts[key] > 0),
+      datasets: [
+        {
+          data: Object.values(stats.logCounts).filter(count => count > 0)
+        }
+      ]
+    };
+    
+    const paymentMethodData = Object.entries(stats.salesByPaymentMethod).map(([method, data]) => ({
+      name: method,
+      count: data.count,
+      color: getRandomColor(),
+      legendFontColor: '#7F7F7F',
+      legendFontSize: 12
+    }));
+    
     return (
-      <Surface style={styles.loadingContainer}>
-        <ActivityIndicator color={theme.colors.primary} size="large" />
-        <Text style={styles.loadingText}>Loading compliance data...</Text>
-      </Surface>
+      <ScrollView style={styles.tabContent}>
+        {/* Compliance Status */}
+        <View style={[
+          styles.statusCard,
+          { backgroundColor: complianceStatus.compliant ? '#E8F5E9' : '#FFEBEE' }
+        ]}>
+          <View style={styles.statusHeader}>
+            <Ionicons
+              name={complianceStatus.compliant ? 'checkmark-circle' : 'alert-circle'}
+              size={24}
+              color={complianceStatus.compliant ? '#2E7D32' : '#C62828'}
+            />
+            <Text style={[
+              styles.statusTitle,
+              { color: complianceStatus.compliant ? '#2E7D32' : '#C62828' }
+            ]}>
+              {complianceStatus.compliant ? 'Compliant' : 'Compliance Issues Detected'}
+            </Text>
+          </View>
+          
+          <Text style={styles.statusText}>
+            Province: {complianceStatus.provinceName}
+          </Text>
+          <Text style={styles.statusText}>
+            Reporting Frequency: {complianceStatus.reportingFrequency.charAt(0).toUpperCase() + complianceStatus.reportingFrequency.slice(1)}
+          </Text>
+          <Text style={styles.statusText}>
+            Next Report Due: {new Date(complianceStatus.nextReportingDate).toLocaleDateString()}
+          </Text>
+          
+          {!complianceStatus.compliant && (
+            <View style={styles.issuesContainer}>
+              <Text style={styles.issuesTitle}>Issues Found:</Text>
+              {complianceStatus.missingFields.slice(0, 3).map((issue, index) => (
+                <Text key={index} style={styles.issueText}>
+                  • Missing {issue.field} in log {issue.logId.substring(0, 8)}...
+                </Text>
+              ))}
+              {complianceStatus.missingFields.length > 3 && (
+                <Text style={styles.issueText}>
+                  • And {complianceStatus.missingFields.length - 3} more issues...
+                </Text>
+              )}
+            </View>
+          )}
+        </View>
+        
+        {/* Sales Summary */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Sales Summary</Text>
+          <View style={styles.statsRow}>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>${stats.totalSales.toFixed(2)}</Text>
+              <Text style={styles.statLabel}>Total Sales</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>${stats.totalTax.toFixed(2)}</Text>
+              <Text style={styles.statLabel}>Total Tax</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{stats.totalItems}</Text>
+              <Text style={styles.statLabel}>Items Sold</Text>
+            </View>
+          </View>
+        </View>
+        
+        {/* Sales by Category Chart */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Sales by Category</Text>
+          {Object.keys(stats.salesByCategory).length > 0 ? (
+            <BarChart
+              data={salesData}
+              width={screenWidth - 40}
+              height={220}
+              yAxisLabel="$"
+              chartConfig={{
+                backgroundColor: theme.colors.surface,
+                backgroundGradientFrom: theme.colors.surface,
+                backgroundGradientTo: theme.colors.surface,
+                decimalPlaces: 0,
+                color: (opacity = 1) => `rgba(46, 125, 50, ${opacity})`,
+                labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+                style: {
+                  borderRadius: 16
+                }
+              }}
+              style={styles.chart}
+            />
+          ) : (
+            <Text style={styles.noDataText}>No sales data available</Text>
+          )}
+        </View>
+        
+        {/* Log Distribution */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Log Distribution</Text>
+          {Object.values(stats.logCounts).some(count => count > 0) ? (
+            <PieChart
+              data={logCountData.labels.map((label, index) => ({
+                name: label.replace(/_/g, ' '),
+                count: logCountData.datasets[0].data[index],
+                color: getRandomColor(),
+                legendFontColor: '#7F7F7F',
+                legendFontSize: 12
+              }))}
+              width={screenWidth - 40}
+              height={220}
+              chartConfig={{
+                backgroundColor: theme.colors.surface,
+                backgroundGradientFrom: theme.colors.surface,
+                backgroundGradientTo: theme.colors.surface,
+                color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+              }}
+              accessor="count"
+              backgroundColor="transparent"
+              paddingLeft="15"
+              style={styles.chart}
+            />
+          ) : (
+            <Text style={styles.noDataText}>No log data available</Text>
+          )}
+        </View>
+        
+        {/* Payment Methods */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Payment Methods</Text>
+          {paymentMethodData.length > 0 ? (
+            <PieChart
+              data={paymentMethodData}
+              width={screenWidth - 40}
+              height={220}
+              chartConfig={{
+                backgroundColor: theme.colors.surface,
+                backgroundGradientFrom: theme.colors.surface,
+                backgroundGradientTo: theme.colors.surface,
+                color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+              }}
+              accessor="count"
+              backgroundColor="transparent"
+              paddingLeft="15"
+              style={styles.chart}
+            />
+          ) : (
+            <Text style={styles.noDataText}>No payment method data available</Text>
+          )}
+        </View>
+        
+        {/* Upcoming Deadlines */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Upcoming Deadlines</Text>
+          {upcomingDeadlines.length > 0 ? (
+            upcomingDeadlines.map((deadline, index) => (
+              <View key={index} style={styles.deadlineItem}>
+                <View style={styles.deadlineDate}>
+                  <Text style={styles.deadlineDay}>
+                    {new Date(deadline.date).getDate()}
+                  </Text>
+                  <Text style={styles.deadlineMonth}>
+                    {new Date(deadline.date).toLocaleString('default', { month: 'short' })}
+                  </Text>
+                </View>
+                <View style={styles.deadlineInfo}>
+                  <Text style={styles.deadlineTitle}>{deadline.description}</Text>
+                  <Text style={styles.deadlineSubtitle}>
+                    {Math.ceil((new Date(deadline.date) - new Date()) / (1000 * 60 * 60 * 24))} days remaining
+                  </Text>
+                </View>
+              </View>
+            ))
+          ) : (
+            <Text style={styles.noDataText}>No upcoming deadlines</Text>
+          )}
+        </View>
+      </ScrollView>
     );
-  }
+  };
+  
+  const renderReportsTab = () => {
+    return (
+      <ScrollView style={styles.tabContent}>
+        {/* Date Range Selector */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Date Range</Text>
+          <View style={styles.dateRangeContainer}>
+            <TouchableOpacity
+              style={styles.dateButton}
+              onPress={() => showDatePickerModal('start')}
+            >
+              <Text style={styles.dateButtonLabel}>Start Date:</Text>
+              <Text style={styles.dateButtonValue}>
+                {dateRange.startDate.toLocaleDateString()}
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={styles.dateButton}
+              onPress={() => showDatePickerModal('end')}
+            >
+              <Text style={styles.dateButtonLabel}>End Date:</Text>
+              <Text style={styles.dateButtonValue}>
+                {dateRange.endDate.toLocaleDateString()}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          
+          {showDatePicker && (
+            <DateTimePicker
+              value={datePickerMode === 'start' ? dateRange.startDate : dateRange.endDate}
+              mode="date"
+              display="default"
+              onChange={handleDateChange}
+              maximumDate={new Date()}
+            />
+          )}
+        </View>
+        
+        {/* Export Options */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Export Reports</Text>
+          <Text style={styles.exportDescription}>
+            Export compliance logs and reports for the selected date range.
+          </Text>
+          
+          <View style={styles.formatSelector}>
+            <Text style={styles.formatLabel}>Format:</Text>
+            <View style={styles.formatOptions}>
+              {Object.values(EXPORT_FORMATS).map((format) => (
+                <TouchableOpacity
+                  key={format}
+                  style={[
+                    styles.formatOption,
+                    exportFormat === format && styles.formatOptionSelected
+                  ]}
+                  onPress={() => setExportFormat(format)}
+                >
+                  <Text
+                    style={[
+                      styles.formatOptionText,
+                      exportFormat === format && styles.formatOptionTextSelected
+                    ]}
+                  >
+                    {format.toUpperCase()}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+          
+          <TouchableOpacity
+            style={styles.exportButton}
+            onPress={handleExport}
+            disabled={isExporting}
+          >
+            {isExporting ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.exportButtonText}>
+                Export {exportFormat.toUpperCase()}
+              </Text>
+            )}
+          </TouchableOpacity>
+        </View>
+        
+        {/* Report Types */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Available Reports</Text>
+          
+          <TouchableOpacity style={styles.reportItem}>
+            <Ionicons name="document-text-outline" size={24} color={theme.colors.primary} />
+            <View style={styles.reportInfo}>
+              <Text style={styles.reportTitle}>Sales Report</Text>
+              <Text style={styles.reportDescription}>
+                Detailed sales transactions with tax calculations
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={24} color="#999" />
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.reportItem}>
+            <Ionicons name="bar-chart-outline" size={24} color={theme.colors.primary} />
+            <View style={styles.reportInfo}>
+              <Text style={styles.reportTitle}>Inventory Report</Text>
+              <Text style={styles.reportDescription}>
+                Inventory changes and adjustments
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={24} color="#999" />
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.reportItem}>
+            <Ionicons name="cash-outline" size={24} color={theme.colors.primary} />
+            <View style={styles.reportInfo}>
+              <Text style={styles.reportTitle}>Cash Float Report</Text>
+              <Text style={styles.reportDescription}>
+                Cash drawer activity and reconciliation
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={24} color="#999" />
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.reportItem}>
+            <Ionicons name="people-outline" size={24} color={theme.colors.primary} />
+            <View style={styles.reportInfo}>
+              <Text style={styles.reportTitle}>Employee Activity</Text>
+              <Text style={styles.reportDescription}>
+                Staff actions and audit trail
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={24} color="#999" />
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.reportItem}>
+            <Ionicons name="trash-outline" size={24} color={theme.colors.primary} />
+            <View style={styles.reportInfo}>
+              <Text style={styles.reportTitle}>Waste Management</Text>
+              <Text style={styles.reportDescription}>
+                Cannabis waste tracking and disposal
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={24} color="#999" />
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    );
+  };
+  
+  const renderSettingsTab = () => {
+    return (
+      <ScrollView style={styles.tabContent}>
+        {/* Province Settings */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Compliance Settings</Text>
+          
+          <View style={styles.settingItem}>
+            <Text style={styles.settingLabel}>Province:</Text>
+            <Text style={styles.settingValue}>
+              {complianceSettings?.province} - {PROVINCES[complianceSettings?.province]}
+            </Text>
+          </View>
+          
+          <View style={styles.settingItem}>
+            <Text style={styles.settingLabel}>Business Name:</Text>
+            <Text style={styles.settingValue}>{complianceSettings?.businessName}</Text>
+          </View>
+          
+          <View style={styles.settingItem}>
+            <Text style={styles.settingLabel}>License Number:</Text>
+            <Text style={styles.settingValue}>{complianceSettings?.licenseNumber}</Text>
+          </View>
+          
+          <View style={styles.settingItem}>
+            <Text style={styles.settingLabel}>Location:</Text>
+            <Text style={styles.settingValue}>{complianceSettings?.location}</Text>
+          </View>
+          
+          <View style={styles.settingItem}>
+            <Text style={styles.settingLabel}>Retention Period:</Text>
+            <Text style={styles.settingValue}>{complianceSettings?.retentionPeriod} years</Text>
+          </View>
+          
+          <TouchableOpacity style={styles.editButton}>
+            <Text style={styles.editButtonText}>Edit Settings</Text>
+          </TouchableOpacity>
+        </View>
+        
+        {/* Auto-Export Settings */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Auto-Export Settings</Text>
+          
+          <View style={styles.settingItem}>
+            <Text style={styles.settingLabel}>Auto-Export:</Text>
+            <Text style={styles.settingValue}>
+              {complianceSettings?.autoExport ? 'Enabled' : 'Disabled'}
+            </Text>
+          </View>
+          
+          {complianceSettings?.autoExport && (
+            <>
+              <View style={styles.settingItem}>
+                <Text style={styles.settingLabel}>Export Format:</Text>
+                <Text style={styles.settingValue}>
+                  {complianceSettings?.exportFormat?.toUpperCase()}
+                </Text>
+              </View>
+              
+              <View style={styles.settingItem}>
+                <Text style={styles.settingLabel}>Export Schedule:</Text>
+                <Text style={styles.settingValue}>
+                  {complianceSettings?.exportSchedule?.charAt(0).toUpperCase() + complianceSettings?.exportSchedule?.slice(1)}
+                </Text>
+              </View>
+            </>
+          )}
+          
+          <TouchableOpacity style={styles.editButton}>
+            <Text style={styles.editButtonText}>Configure Auto-Export</Text>
+          </TouchableOpacity>
+        </View>
+        
+        {/* Advanced Settings */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Advanced Settings</Text>
+          
+          <View style={styles.settingItem}>
+            <Text style={styles.settingLabel}>Notification Days:</Text>
+            <Text style={styles.settingValue}>
+              {complianceSettings?.notifyDays} days before deadlines
+            </Text>
+          </View>
+          
+          <View style={styles.settingItem}>
+            <Text style={styles.settingLabel}>Audit Trail:</Text>
+            <Text style={styles.settingValue}>
+              {complianceSettings?.enableAuditTrail ? 'Enabled' : 'Disabled'}
+            </Text>
+          </View>
+          
+          <View style={styles.settingItem}>
+            <Text style={styles.settingLabel}>Employee Tracking:</Text>
+            <Text style={styles.settingValue}>
+              {complianceSettings?.trackEmployeeActivity ? 'Enabled' : 'Disabled'}
+            </Text>
+          </View>
+          
+          <View style={styles.settingItem}>
+            <Text style={styles.settingLabel}>Waste Management:</Text>
+            <Text style={styles.settingValue}>
+              {complianceSettings?.trackWasteManagement ? 'Enabled' : 'Disabled'}
+            </Text>
+          </View>
+          
+          <TouchableOpacity style={styles.editButton}>
+            <Text style={styles.editButtonText}>Advanced Configuration</Text>
+          </TouchableOpacity>
+        </View>
+        
+        {/* Data Management */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Data Management</Text>
+          
+          <TouchableOpacity style={styles.dangerButton}>
+            <Text style={styles.dangerButtonText}>Import Compliance Logs</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={[styles.dangerButton, { backgroundColor: '#FFEBEE' }]}>
+            <Text style={[styles.dangerButtonText, { color: '#C62828' }]}>Clear All Logs</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    );
+  };
+  
+  const getRandomColor = () => {
+    const colors = [
+      '#4CAF50', '#8BC34A', '#CDDC39', '#2196F3', '#3F51B5',
+      '#9C27B0', '#E91E63', '#F44336', '#FF9800', '#FFC107'
+    ];
+    return colors[Math.floor(Math.random() * colors.length)];
+  };
   
   return (
-    <Surface style={styles.container}>
+    <View style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Compliance Dashboard</Text>
-        <IconButton
-          icon="close"
-          color="#fff"
-          size={20}
-          onPress={onClose}
-        />
+        <Text style={styles.title}>Compliance Dashboard</Text>
+        <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+          <Ionicons name="close" size={24} color="#333" />
+        </TouchableOpacity>
       </View>
       
+      {/* Tabs */}
       <View style={styles.tabs}>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'overview' && styles.activeTab]}
           onPress={() => setActiveTab('overview')}
         >
-          <Text style={[styles.tabText, activeTab === 'overview' && styles.activeTabText]}>
+          <Ionicons
+            name="pie-chart"
+            size={20}
+            color={activeTab === 'overview' ? theme.colors.primary : '#666'}
+          />
+          <Text
+            style={[
+              styles.tabText,
+              activeTab === 'overview' && styles.activeTabText
+            ]}
+          >
             Overview
           </Text>
         </TouchableOpacity>
+        
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'logs' && styles.activeTab]}
-          onPress={() => setActiveTab('logs')}
+          style={[styles.tab, activeTab === 'reports' && styles.activeTab]}
+          onPress={() => setActiveTab('reports')}
         >
-          <Text style={[styles.tabText, activeTab === 'logs' && styles.activeTabText]}>
-            Logs
+          <Ionicons
+            name="document-text"
+            size={20}
+            color={activeTab === 'reports' ? theme.colors.primary : '#666'}
+          />
+          <Text
+            style={[
+              styles.tabText,
+              activeTab === 'reports' && styles.activeTabText
+            ]}
+          >
+            Reports
           </Text>
         </TouchableOpacity>
+        
         <TouchableOpacity
           style={[styles.tab, activeTab === 'settings' && styles.activeTab]}
           onPress={() => setActiveTab('settings')}
         >
-          <Text style={[styles.tabText, activeTab === 'settings' && styles.activeTabText]}>
+          <Ionicons
+            name="settings"
+            size={20}
+            color={activeTab === 'settings' ? theme.colors.primary : '#666'}
+          />
+          <Text
+            style={[
+              styles.tabText,
+              activeTab === 'settings' && styles.activeTabText
+            ]}
+          >
             Settings
           </Text>
         </TouchableOpacity>
       </View>
       
-      <ScrollView style={styles.content}>
-        {activeTab === 'overview' && (
-          <View style={styles.overviewContainer}>
-            <View style={styles.overviewHeader}>
-              <Text style={styles.overviewTitle}>Compliance Status</Text>
-              <Chip 
-                mode="outlined" 
-                textStyle={{ color: issues.length > 0 ? theme.colors.error : theme.colors.primary }}
-                style={{ 
-                  backgroundColor: issues.length > 0 ? '#FFEBEE' : '#E8F5E9',
-                  borderColor: issues.length > 0 ? theme.colors.error : theme.colors.primary
-                }}
-              >
-                {issues.length > 0 ? `${issues.length} Issues` : 'All Good'}
-              </Chip>
-            </View>
-            
-            <View style={styles.provinceBanner}>
-              <Text style={styles.provinceText}>
-                Province: {PROVINCES[settings?.province] || 'Not Set'}
-              </Text>
-              <Button
-                mode="contained"
-                compact
-                onPress={() => setProvinceMenuVisible(true)}
-              >
-                Change
-              </Button>
-              
-              <Menu
-                visible={provinceMenuVisible}
-                onDismiss={() => setProvinceMenuVisible(false)}
-                anchor={<View />}
-                style={styles.provinceMenu}
-              >
-                {Object.keys(PROVINCES).map(code => (
-                  <Menu.Item
-                    key={code}
-                    title={PROVINCES[code]}
-                    onPress={() => handleProvinceChange(code)}
-                    titleStyle={
-                      settings?.province === code ? { color: theme.colors.primary } : {}
-                    }
-                  />
-                ))}
-              </Menu>
-            </View>
-            
-            {issues.length > 0 && (
-              <View style={styles.issuesContainer}>
-                <Text style={styles.sectionTitle}>Compliance Issues</Text>
-                {issues.map((issue, index) => (
-                  <Surface key={index} style={styles.issueCard}>
-                    <View style={styles.issueHeader}>
-                      <Text style={styles.issueTitle}>{issue.message}</Text>
-                      <Chip 
-                        mode="outlined" 
-                        textStyle={{ 
-                          color: issue.severity === 'high' ? theme.colors.error : 
-                                 issue.severity === 'medium' ? '#FB8C00' : 
-                                 theme.colors.primary 
-                        }}
-                        style={{ 
-                          backgroundColor: 'transparent',
-                          borderColor: issue.severity === 'high' ? theme.colors.error : 
-                                      issue.severity === 'medium' ? '#FB8C00' : 
-                                      theme.colors.primary
-                        }}
-                      >
-                        {issue.severity.toUpperCase()}
-                      </Chip>
-                    </View>
-                    <Button
-                      mode="contained"
-                      onPress={() => handleResolveIssue(issue)}
-                      style={styles.resolveButton}
-                    >
-                      Resolve Issue
-                    </Button>
-                  </Surface>
-                ))}
-              </View>
-            )}
-            
-            <View style={styles.summaryContainer}>
-              <Text style={styles.sectionTitle}>Retention Status</Text>
-              {retentionStatus && (
-                <Surface style={styles.summaryCard}>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.summaryLabel}>Total Logs:</Text>
-                    <Text style={styles.summaryValue}>{retentionStatus.totalLogs}</Text>
-                  </View>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.summaryLabel}>Current Logs:</Text>
-                    <Text style={styles.summaryValue}>{retentionStatus.currentLogs}</Text>
-                  </View>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.summaryLabel}>Expiring Soon:</Text>
-                    <Text style={[
-                      styles.summaryValue,
-                      retentionStatus.expiringLogs > 0 && { color: '#FB8C00' }
-                    ]}>
-                      {retentionStatus.expiringLogs}
-                    </Text>
-                  </View>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.summaryLabel}>Expired Logs:</Text>
-                    <Text style={[
-                      styles.summaryValue,
-                      retentionStatus.expiredLogs > 0 && { color: theme.colors.error }
-                    ]}>
-                      {retentionStatus.expiredLogs}
-                    </Text>
-                  </View>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.summaryLabel}>Retention Period:</Text>
-                    <Text style={styles.summaryValue}>{retentionStatus.retentionPeriod} years</Text>
-                  </View>
-                  
-                  {retentionStatus.expiredLogs > 0 && (
-                    <Button
-                      mode="contained"
-                      onPress={handleArchiveLogs}
-                      style={styles.archiveButton}
-                    >
-                      Archive Expired Logs
-                    </Button>
-                  )}
-                </Surface>
-              )}
-            </View>
-            
-            <View style={styles.actionsContainer}>
-              <Text style={styles.sectionTitle}>Quick Actions</Text>
-              <View style={styles.actionButtons}>
-                <Button
-                  mode="contained"
-                  icon="file-document-outline"
-                  onPress={handleGenerateSummary}
-                  style={styles.actionButton}
-                >
-                  Generate Daily Summary
-                </Button>
-                <Button
-                  mode="contained"
-                  icon="export"
-                  onPress={handleExportLogs}
-                  style={styles.actionButton}
-                  loading={isExporting}
-                  disabled={isExporting}
-                >
-                  Export Logs
-                </Button>
-              </View>
-            </View>
-          </View>
-        )}
-        
-        {activeTab === 'logs' && (
-          <View style={styles.logsContainer}>
-            <View style={styles.logsHeader}>
-              <Text style={styles.sectionTitle}>Compliance Logs</Text>
-              <View style={styles.logsActions}>
-                <Menu
-                  visible={filterMenuVisible}
-                  onDismiss={() => setFilterMenuVisible(false)}
-                  anchor={
-                    <Button
-                      mode="outlined"
-                      icon="filter"
-                      onPress={() => setFilterMenuVisible(true)}
-                      style={styles.filterButton}
-                    >
-                      Filter
-                    </Button>
-                  }
-                >
-                  <Menu.Item
-                    title="All Logs"
-                    onPress={handleClearFilter}
-                  />
-                  <Divider />
-                  <Menu.Item
-                    title="Sales"
-                    onPress={() => handleFilterByType(LOG_TYPES.SALE)}
-                  />
-                  <Menu.Item
-                    title="Inventory"
-                    onPress={() => handleFilterByType(LOG_TYPES.INVENTORY)}
-                  />
-                  <Menu.Item
-                    title="Cash Float"
-                    onPress={() => handleFilterByType(LOG_TYPES.CASH_FLOAT)}
-                  />
-                  <Menu.Item
-                    title="Daily Summary"
-                    onPress={() => handleFilterByType(LOG_TYPES.DAILY_SUMMARY)}
-                  />
-                  <Menu.Item
-                    title="Audit"
-                    onPress={() => handleFilterByType(LOG_TYPES.AUDIT)}
-                  />
-                </Menu>
-                
-                <Button
-                  mode="contained"
-                  icon="refresh"
-                  onPress={loadDashboardData}
-                  style={styles.refreshButton}
-                >
-                  Refresh
-                </Button>
-              </View>
-            </View>
-            
-            {selectedLogType && (
-              <Chip
-                mode="outlined"
-                onClose={handleClearFilter}
-                style={styles.filterChip}
-              >
-                Filtered: {selectedLogType}
-              </Chip>
-            )}
-            
-            {logs.length === 0 ? (
-              <Text style={styles.emptyText}>No logs found</Text>
-            ) : (
-              logs.map((log, index) => (
-                <Surface key={log.id} style={styles.logCard}>
-                  <View style={styles.logHeader}>
-                    <Chip mode="outlined" style={styles.logTypeChip}>
-                      {log.type}
-                    </Chip>
-                    <Text style={styles.logDate}>
-                      {new Date(log.timestamp).toLocaleString()}
-                    </Text>
-                  </View>
-                  <View style={styles.logContent}>
-                    {log.type === LOG_TYPES.SALE && (
-                      <Text style={styles.logText}>
-                        Sale: ${log.data.total.toFixed(2)} - {log.data.products?.length || 0} products
-                      </Text>
-                    )}
-                    {log.type === LOG_TYPES.INVENTORY && (
-                      <Text style={styles.logText}>
-                        Inventory: {log.data.adjustmentType} - {log.data.productName} ({log.data.quantity})
-                      </Text>
-                    )}
-                    {log.type === LOG_TYPES.CASH_FLOAT && (
-                      <Text style={styles.logText}>
-                        Cash Float: {log.data.activityType} - ${log.data.amount.toFixed(2)}
-                      </Text>
-                    )}
-                    {log.type === LOG_TYPES.DAILY_SUMMARY && (
-                      <Text style={styles.logText}>
-                        Daily Summary: ${log.data.totalSales.toFixed(2)} - {log.data.transactionCount} transactions
-                      </Text>
-                    )}
-                    {log.type === LOG_TYPES.AUDIT && (
-                      <Text style={styles.logText}>
-                        Audit: {log.data.action} - {log.data.details}
-                      </Text>
-                    )}
-                  </View>
-                </Surface>
-              ))
-            )}
-          </View>
-        )}
-        
-        {activeTab === 'settings' && (
-          <View style={styles.settingsContainer}>
-            <Text style={styles.sectionTitle}>Compliance Settings</Text>
-            
-            <Surface style={styles.settingsCard}>
-              <Text style={styles.settingLabel}>Business Information</Text>
-              <View style={styles.settingRow}>
-                <Text style={styles.settingName}>Business Name</Text>
-                <Text style={styles.settingValue}>{settings?.businessName}</Text>
-              </View>
-              <View style={styles.settingRow}>
-                <Text style={styles.settingName}>License Number</Text>
-                <Text style={styles.settingValue}>{settings?.licenseNumber}</Text>
-              </View>
-              <View style={styles.settingRow}>
-                <Text style={styles.settingName}>Location</Text>
-                <Text style={styles.settingValue}>{settings?.location}</Text>
-              </View>
-            </Surface>
-            
-            <Surface style={styles.settingsCard}>
-              <Text style={styles.settingLabel}>Compliance Configuration</Text>
-              <View style={styles.settingRow}>
-                <Text style={styles.settingName}>Province</Text>
-                <View style={styles.settingAction}>
-                  <Text style={styles.settingValue}>{PROVINCES[settings?.province]}</Text>
-                  <Button
-                    mode="text"
-                    onPress={() => setProvinceMenuVisible(true)}
-                  >
-                    Change
-                  </Button>
-                </View>
-              </View>
-              <View style={styles.settingRow}>
-                <Text style={styles.settingName}>Retention Period</Text>
-                <Text style={styles.settingValue}>{settings?.retentionPeriod} years</Text>
-              </View>
-              <View style={styles.settingRow}>
-                <Text style={styles.settingName}>Language</Text>
-                <Text style={styles.settingValue}>
-                  {settings?.language === 'fr' ? 'French' : 'English'}
-                </Text>
-              </View>
-            </Surface>
-            
-            <Surface style={styles.settingsCard}>
-              <Text style={styles.settingLabel}>Export Settings</Text>
-              <View style={styles.settingRow}>
-                <Text style={styles.settingName}>Export Format</Text>
-                <View style={styles.settingAction}>
-                  <Text style={styles.settingValue}>{settings?.exportFormat?.toUpperCase()}</Text>
-                  <Menu
-                    visible={exportMenuVisible}
-                    onDismiss={() => setExportMenuVisible(false)}
-                    anchor={
-                      <Button
-                        mode="text"
-                        onPress={() => setExportMenuVisible(true)}
-                      >
-                        Change
-                      </Button>
-                    }
-                  >
-                    <Menu.Item
-                      title="CSV"
-                      onPress={() => handleExportFormatChange(EXPORT_FORMATS.CSV)}
-                    />
-                    <Menu.Item
-                      title="JSON"
-                      onPress={() => handleExportFormatChange(EXPORT_FORMATS.JSON)}
-                    />
-                    <Menu.Item
-                      title="XML"
-                      onPress={() => handleExportFormatChange(EXPORT_FORMATS.XML)}
-                    />
-                  </Menu>
-                </View>
-              </View>
-              <View style={styles.settingRow}>
-                <Text style={styles.settingName}>Auto Export</Text>
-                <Text style={styles.settingValue}>
-                  {settings?.autoExport ? 'Enabled' : 'Disabled'}
-                </Text>
-              </View>
-              {settings?.autoExport && (
-                <View style={styles.settingRow}>
-                  <Text style={styles.settingName}>Export Email</Text>
-                  <Text style={styles.settingValue}>{settings?.exportEmail}</Text>
-                </View>
-              )}
-            </Surface>
-          </View>
-        )}
-      </ScrollView>
-    </Surface>
+      {/* Tab Content */}
+      {activeTab === 'overview' && renderOverviewTab()}
+      {activeTab === 'reports' && renderReportsTab()}
+      {activeTab === 'settings' && renderSettingsTab()}
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    width: '100%',
-    height: '100%',
-    maxWidth: 800,
-    maxHeight: 600,
-    alignSelf: 'center',
-    borderRadius: 10,
-    overflow: 'hidden',
-    elevation: 4
-  },
-  loadingContainer: {
-    width: '100%',
-    height: '100%',
-    maxWidth: 800,
-    maxHeight: 600,
-    alignSelf: 'center',
-    borderRadius: 10,
-    overflow: 'hidden',
-    elevation: 4,
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  loadingText: {
-    marginTop: 10,
-    color: '#666'
+    flex: 1,
+    backgroundColor: '#f5f5f5'
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 15,
-    backgroundColor: theme.colors.primary
+    justifyContent: 'space-between',
+    padding: 16,
+    backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0'
   },
-  headerTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold'
+  title: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333'
+  },
+  closeButton: {
+    padding: 4
   },
   tabs: {
     flexDirection: 'row',
+    backgroundColor: 'white',
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0'
   },
   tab: {
     flex: 1,
-    paddingVertical: 15,
-    alignItems: 'center'
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12
   },
   activeTab: {
     borderBottomWidth: 2,
-    borderBottomColor: theme.colors.primary
+    borderBottomColor: '#2E7D32'
   },
   tabText: {
+    marginLeft: 8,
     color: '#666',
     fontWeight: '500'
   },
   activeTabText: {
-    color: theme.colors.primary,
+    color: '#2E7D32',
     fontWeight: 'bold'
   },
-  content: {
+  tabContent: {
     flex: 1,
-    backgroundColor: '#f5f5f5'
+    padding: 16
   },
-  overviewContainer: {
-    padding: 15
-  },
-  overviewHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 15
-  },
-  overviewTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333'
-  },
-  provinceBanner: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#E8F5E9',
-    padding: 15,
-    borderRadius: 5,
-    marginBottom: 20
-  },
-  provinceText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#333'
-  },
-  provinceMenu: {
-    marginTop: 50
-  },
-  issuesContainer: {
-    marginBottom: 20
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 10
-  },
-  issueCard: {
-    padding: 15,
-    borderRadius: 5,
-    marginBottom: 10,
-    elevation: 2
-  },
-  issueHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10
-  },
-  issueTitle: {
+  loadingContainer: {
     flex: 1,
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#333',
-    marginRight: 10
-  },
-  resolveButton: {
-    marginTop: 10
-  },
-  summaryContainer: {
-    marginBottom: 20
-  },
-  summaryCard: {
-    padding: 15,
-    borderRadius: 5,
-    elevation: 2
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0'
+    justifyContent: 'center',
+    padding: 20
   },
-  summaryLabel: {
-    fontSize: 14,
+  loadingText: {
+    marginTop: 10,
     color: '#666'
   },
-  summaryValue: {
-    fontSize: 14,
-    fontWeight: '500',
+  card: {
+    backgroundColor: 'white',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 16,
     color: '#333'
   },
-  archiveButton: {
-    marginTop: 15
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between'
   },
-  actionsContainer: {
-    marginBottom: 20
+  statItem: {
+    alignItems: 'center',
+    flex: 1
   },
-  actionButtons: {
+  statValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2E7D32'
+  },
+  statLabel: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 4
+  },
+  chart: {
+    marginVertical: 8,
+    borderRadius: 8
+  },
+  noDataText: {
+    textAlign: 'center',
+    color: '#999',
+    fontStyle: 'italic',
+    padding: 20
+  },
+  statusCard: {
+    backgroundColor: '#E8F5E9',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 16
+  },
+  statusHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12
+  },
+  statusTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginLeft: 8,
+    color: '#2E7D32'
+  },
+  statusText: {
+    fontSize: 14,
+    color: '#333',
+    marginBottom: 4
+  },
+  issuesContainer: {
+    marginTop: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    borderRadius: 4,
+    padding: 12
+  },
+  issuesTitle: {
+    fontWeight: 'bold',
+    marginBottom: 8,
+    color: '#C62828'
+  },
+  issueText: {
+    color: '#333',
+    marginBottom: 4
+  },
+  deadlineItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 4,
+    padding: 8
+  },
+  deadlineDate: {
+    width: 50,
+    height: 50,
+    backgroundColor: '#2E7D32',
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12
+  },
+  deadlineDay: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 18
+  },
+  deadlineMonth: {
+    color: 'white',
+    fontSize: 12
+  },
+  deadlineInfo: {
+    flex: 1
+  },
+  deadlineTitle: {
+    fontWeight: 'bold',
+    color: '#333'
+  },
+  deadlineSubtitle: {
+    color: '#666',
+    fontSize: 12
+  },
+  dateRangeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between'
+  },
+  dateButton: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 4,
+    padding: 12,
+    marginHorizontal: 4
+  },
+  dateButtonLabel: {
+    color: '#666',
+    fontSize: 12
+  },
+  dateButtonValue: {
+    color: '#333',
+    fontWeight: 'bold',
+    marginTop: 4
+  },
+  exportDescription: {
+    color: '#666',
+    marginBottom: 16
+  },
+  formatSelector: {
+    marginBottom: 16
+  },
+  formatLabel: {
+    color: '#666',
+    marginBottom: 8
+  },
+  formatOptions: {
     flexDirection: 'row',
     flexWrap: 'wrap'
   },
-  actionButton: {
-    marginRight: 10,
-    marginBottom: 10
+  formatOption: {
+    backgroundColor: '#f5f5f5',
+    borderRadius: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    margin: 4
   },
-  logsContainer: {
-    padding: 15
+  formatOptionSelected: {
+    backgroundColor: '#2E7D32'
   },
-  logsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 15
-  },
-  logsActions: {
-    flexDirection: 'row'
-  },
-  filterButton: {
-    marginRight: 10
-  },
-  refreshButton: {
-  },
-  filterChip: {
-    marginBottom: 15
-  },
-  emptyText: {
-    textAlign: 'center',
-    color: '#666',
-    marginTop: 20
-  },
-  logCard: {
-    padding: 15,
-    borderRadius: 5,
-    marginBottom: 10,
-    elevation: 2
-  },
-  logHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10
-  },
-  logTypeChip: {
-    backgroundColor: '#E8F5E9'
-  },
-  logDate: {
-    fontSize: 12,
-    color: '#666'
-  },
-  logContent: {
-  },
-  logText: {
-    fontSize: 14,
+  formatOptionText: {
     color: '#333'
   },
-  settingsContainer: {
-    padding: 15
+  formatOptionTextSelected: {
+    color: 'white',
+    fontWeight: 'bold'
   },
-  settingsCard: {
-    padding: 15,
-    borderRadius: 5,
-    marginBottom: 15,
-    elevation: 2
+  exportButton: {
+    backgroundColor: '#2E7D32',
+    borderRadius: 4,
+    padding: 12,
+    alignItems: 'center'
   },
-  settingLabel: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: theme.colors.primary,
-    marginBottom: 10
+  exportButtonText: {
+    color: 'white',
+    fontWeight: 'bold'
   },
-  settingRow: {
+  reportItem: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0'
   },
-  settingName: {
-    fontSize: 14,
+  reportInfo: {
+    flex: 1,
+    marginLeft: 12
+  },
+  reportTitle: {
+    fontWeight: 'bold',
+    color: '#333'
+  },
+  reportDescription: {
+    color: '#666',
+    fontSize: 12
+  },
+  settingItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0'
+  },
+  settingLabel: {
     color: '#666'
   },
   settingValue: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#333'
+    color: '#333',
+    fontWeight: '500'
   },
-  settingAction: {
-    flexDirection: 'row',
-    alignItems: 'center'
+  editButton: {
+    backgroundColor: '#f5f5f5',
+    borderRadius: 4,
+    padding: 12,
+    alignItems: 'center',
+    marginTop: 16
+  },
+  editButtonText: {
+    color: '#2E7D32',
+    fontWeight: 'bold'
+  },
+  dangerButton: {
+    backgroundColor: '#f5f5f5',
+    borderRadius: 4,
+    padding: 12,
+    alignItems: 'center',
+    marginTop: 8
+  },
+  dangerButtonText: {
+    color: '#333',
+    fontWeight: 'bold'
   }
 });
 

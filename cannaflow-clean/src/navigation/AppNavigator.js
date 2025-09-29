@@ -3,6 +3,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { NavigationContainer } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { View } from 'react-native';
 
 // Import screens
 import LoginScreen from '../screens/LoginScreen';
@@ -16,6 +17,9 @@ import SettingsScreen from '../screens/SettingsScreen';
 import CashFloatScreen from '../screens/CashFloatScreen';
 
 import { theme } from '../theme/theme';
+import AIFloatingButton from '../components/AIFloatingButton';
+import { useAI } from '../context/AIContext';
+import { useCart } from '../context/CartContext';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -45,60 +49,91 @@ const SettingsStack = () => (
 );
 
 // Simplified tab navigator with no header configuration
-const MainTabs = () => (
-  <Tab.Navigator
-    screenOptions={{
-      headerShown: false,
-      tabBarActiveTintColor: theme.colors.primary,
-      tabBarInactiveTintColor: theme.colors.disabled,
-      tabBarStyle: {
-        backgroundColor: theme.colors.surface,
-        borderTopWidth: 0,
-        elevation: 8,
-        height: 60,
-        paddingBottom: 8,
-        paddingTop: 8,
-      }
-    }}
-  >
-    <Tab.Screen 
-      name="Dashboard" 
-      component={DashboardScreen} 
-      options={{
-        tabBarIcon: ({ color, size }) => (
-          <MaterialCommunityIcons name="view-dashboard" color={color} size={size} />
-        ),
-      }}
-    />
-    <Tab.Screen 
-      name="Sales" 
-      component={SalesStack} 
-      options={{
-        tabBarIcon: ({ color, size }) => (
-          <MaterialCommunityIcons name="cash-register" color={color} size={size} />
-        ),
-      }}
-    />
-    <Tab.Screen 
-      name="Inventory" 
-      component={InventoryStack} 
-      options={{
-        tabBarIcon: ({ color, size }) => (
-          <MaterialCommunityIcons name="package-variant-closed" color={color} size={size} />
-        ),
-      }}
-    />
-    <Tab.Screen 
-      name="Settings" 
-      component={SettingsStack} 
-      options={{
-        tabBarIcon: ({ color, size }) => (
-          <MaterialCommunityIcons name="cog" color={color} size={size} />
-        ),
-      }}
-    />
-  </Tab.Navigator>
-);
+const MainTabs = () => {
+  const { addToCart } = useCart();
+  
+  // Callback handlers for AI Assistant
+  const handleAddToCart = (product, quantity) => {
+    addToCart(product, quantity);
+  };
+  
+  const handleShowInventory = (filter, products) => {
+    // Navigate to inventory with filter
+  };
+  
+  const handleOpenFloat = (amount) => {
+    // Navigate to cash float screen
+  };
+  
+  const handleCloseFloat = (amount) => {
+    // Close cash float
+  };
+  
+  return (
+    <View style={{ flex: 1 }}>
+      <Tab.Navigator
+        screenOptions={{
+          headerShown: false,
+          tabBarActiveTintColor: theme.colors.primary,
+          tabBarInactiveTintColor: theme.colors.disabled,
+          tabBarStyle: {
+            backgroundColor: theme.colors.surface,
+            borderTopWidth: 0,
+            elevation: 8,
+            height: 60,
+            paddingBottom: 8,
+            paddingTop: 8,
+          }
+        }}
+      >
+        <Tab.Screen 
+          name="Dashboard" 
+          component={DashboardScreen} 
+          options={{
+            tabBarIcon: ({ color, size }) => (
+              <MaterialCommunityIcons name="view-dashboard" color={color} size={size} />
+            ),
+          }}
+        />
+        <Tab.Screen 
+          name="Sales" 
+          component={SalesStack} 
+          options={{
+            tabBarIcon: ({ color, size }) => (
+              <MaterialCommunityIcons name="cash-register" color={color} size={size} />
+            ),
+          }}
+        />
+        <Tab.Screen 
+          name="Inventory" 
+          component={InventoryStack} 
+          options={{
+            tabBarIcon: ({ color, size }) => (
+              <MaterialCommunityIcons name="package-variant-closed" color={color} size={size} />
+            ),
+          }}
+        />
+        <Tab.Screen 
+          name="Settings" 
+          component={SettingsStack} 
+          options={{
+            tabBarIcon: ({ color, size }) => (
+              <MaterialCommunityIcons name="cog" color={color} size={size} />
+            ),
+          }}
+        />
+      </Tab.Navigator>
+      
+      {/* AI Floating Button */}
+      <AIFloatingButton 
+        onAddToCart={handleAddToCart}
+        onShowInventory={handleShowInventory}
+        onOpenFloat={handleOpenFloat}
+        onCloseFloat={handleCloseFloat}
+      />
+    </View>
+  );
+};
 
 // Simple navigation container with no complex configuration
 const AppNavigator = () => {
