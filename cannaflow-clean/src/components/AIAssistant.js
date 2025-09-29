@@ -1,8 +1,8 @@
 import * as Speech from 'expo-speech';
 import { Platform } from 'react-native';
-import { searchProducts } from './productService';
-import { getTodayFloat, initializeDailyFloat, closeDailyFloat } from './cashFloatService';
-import { getProducts } from './productService';
+import { searchProducts } from '../services/productService';
+import { getTodayFloat, initializeDailyFloat, closeDailyFloat } from '../services/cashFloatService';
+import { getProducts } from '../services/productService';
 
 // Intent types
 const INTENT_TYPES = {
