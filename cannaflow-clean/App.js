@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { StatusBar, LogBox } from 'react-native';
 import { Provider as PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -10,6 +10,8 @@ import { AIProvider } from './src/context/AIContext';
 import { BusinessTypeProvider } from './src/context/BusinessTypeContext';
 import { ComplianceModeProvider } from './src/context/ComplianceModeContext';
 import { initDatabase } from './src/database/database';
+import { initSentry, setSentryUser } from './src/services/sentryConfig';
+import { firebaseAuth } from './src/services/firebaseAuth';
 
 // Ignore specific warnings
 LogBox.ignoreLogs([
@@ -29,6 +31,22 @@ initDatabase()
   });
 
 export default function App() {
+  // Set up Sentry user tracking
+  useEffect(() => {
+    const setupSentryUser = async () => {
+      try {
+        const user = await firebaseAuth.getCurrentUser();
+        if (user) {
+          setSentryUser(user);
+        }
+      } catch (error) {
+        console.error('Error setting Sentry user:', error);
+      }
+    };
+
+    setupSentryUser();
+  }, []);
+
   return (
     <SafeAreaProvider>
       <PaperProvider theme={theme}>

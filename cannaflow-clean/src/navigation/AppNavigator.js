@@ -7,18 +7,23 @@ import { View } from 'react-native';
 
 // Import screens
 import LoginScreen from '../screens/LoginScreen';
+import StaffLoginScreen from '../screens/StaffLoginScreen';
 import BusinessTypeSelectionScreen from '../screens/BusinessTypeSelectionScreen';
 import DashboardScreen from '../screens/DashboardScreen';
 import GrowDashboardScreen from '../screens/GrowDashboardScreen';
 import SalesScreen from '../screens/SalesScreen';
+import SalesScreenEnhanced from '../screens/SalesScreenEnhanced';
 import CartScreen from '../screens/CartScreen';
 import InventoryScreen from '../screens/InventoryScreen';
+import InventoryManager from '../components/InventoryManager';
 import ProductDetailScreen from '../screens/ProductDetailScreen';
 import SaleDetailScreen from '../screens/SaleDetailScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import CashFloatScreen from '../screens/CashFloatScreen';
 import AnalyticsScreen from '../screens/AnalyticsScreen';
 import ComplianceDashboard from '../components/ComplianceDashboard';
+import CheckoutFlow from '../components/CheckoutFlow';
+import ComplianceChecker from '../components/ComplianceChecker';
 
 import { theme } from '../theme/theme';
 import AIFloatingButton from '../components/AIFloatingButton';
@@ -32,17 +37,19 @@ const Tab = createBottomTabNavigator();
 // Sales Stack Navigator
 const SalesStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="SalesMain" component={SalesScreen} />
+    <Stack.Screen name="SalesMain" component={SalesScreenEnhanced} />
     <Stack.Screen name="Cart" component={CartScreen} />
     <Stack.Screen name="SaleDetail" component={SaleDetailScreen} />
     <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
+    <Stack.Screen name="Checkout" component={CheckoutFlow} />
+    <Stack.Screen name="Compliance" component={ComplianceChecker} />
   </Stack.Navigator>
 );
 
 // Inventory Stack Navigator
 const InventoryStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="InventoryMain" component={InventoryScreen} />
+    <Stack.Screen name="InventoryMain" component={InventoryManager} />
     <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
   </Stack.Navigator>
 );
@@ -255,6 +262,7 @@ const AppNavigator = () => {
         ) : null}
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Main" component={MainTabs} />
+           <Stack.Screen name="StaffLogin" component={StaffLoginScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
