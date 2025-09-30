@@ -6,7 +6,10 @@ import { theme } from './src/theme/theme';
 import AppNavigator from './src/navigation/AppNavigator';
 import { AuthProvider } from './src/context/AuthContext';
 import { CartProvider } from './src/context/CartContext';
-import { initializeDatabase } from './src/database/database';
+import { AIProvider } from './src/context/AIContext';
+import { BusinessTypeProvider } from './src/context/BusinessTypeContext';
+import { ComplianceModeProvider } from './src/context/ComplianceModeContext';
+import { initDatabase } from './src/database/database';
 
 // Ignore specific warnings
 LogBox.ignoreLogs([
@@ -17,7 +20,7 @@ LogBox.ignoreLogs([
 
 // Initialize the database
 console.log('Initializing database...');
-initializeDatabase()
+initDatabase()
   .then(() => {
     console.log('Database initialized successfully');
   })
@@ -33,13 +36,17 @@ export default function App() {
           barStyle="light-content"
           backgroundColor={theme.colors.background}
         />
-        <AuthProvider>
-          <CartProvider>
-            <AIProvider>
-              <AppNavigator />
-            </AIProvider>
-          </CartProvider>
-        </AuthProvider>
+        <BusinessTypeProvider>
+          <ComplianceModeProvider>
+            <AuthProvider>
+              <CartProvider>
+                <AIProvider>
+                  <AppNavigator />
+                </AIProvider>
+              </CartProvider>
+            </AuthProvider>
+          </ComplianceModeProvider>
+        </BusinessTypeProvider>
       </PaperProvider>
     </SafeAreaProvider>
   );

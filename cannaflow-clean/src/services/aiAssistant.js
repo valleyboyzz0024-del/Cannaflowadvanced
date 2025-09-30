@@ -3,6 +3,8 @@ import { Platform } from 'react-native';
 import { searchProducts } from './productService';
 import { getTodayFloat, initializeDailyFloat, closeDailyFloat } from './cashFloatService';
 import { getProducts } from './productService';
+import { getDashboardAnalytics } from './analyticsService';
+import { searchStrains, getStrainType } from '../data/strainDatabase';
 
 // Intent types
 const INTENT_TYPES = {
@@ -11,6 +13,8 @@ const INTENT_TYPES = {
   OPEN_FLOAT: 'open_float',
   CLOSE_FLOAT: 'close_float',
   SEARCH_PRODUCTS: 'search_products',
+  ANALYTICS_QUERY: 'analytics_query',
+  STRAIN_INFO: 'strain_info',
   UNKNOWN: 'unknown',
   ERROR: 'error'
 };
@@ -19,12 +23,13 @@ const INTENT_TYPES = {
 const ADD_CART_REGEX = /\b(add|put|include)\b.+\b(to cart|to order|to basket)\b/i;
 const QUANTITY_REGEX = /\b(one|two|three|four|five|six|seven|eight|nine|ten|\d+)\b/i;
 const PRODUCT_TYPE_REGEX = /\b(sativa|indica|hybrid|flower|edible|concentrate|cbd|oil|gummies|pre-roll|vape)\b/i;
-const PRODUCT_NAME_REGEX = /\b(blue dream|og kush|sour diesel|girl scout cookies|purple punch|jack herer|northern lights|pineapple express|cbd oil|thc gummies)\b/i;
 const INVENTORY_REGEX = /\b(show|display|list|view)\b.+\b(inventory|stock|products)\b/i;
 const INVENTORY_FILTER_REGEX = /\b(for|of|with)\b.+\b(sativa|indica|hybrid|flower|edible|concentrate|cbd|oil|gummies|pre-roll|vape)\b/i;
 const OPEN_FLOAT_REGEX = /\b(open|start|initialize|begin)\b.+\b(float|cash float|register|till)\b/i;
 const CLOSE_FLOAT_REGEX = /\b(close|end|finalize)\b.+\b(float|cash float|register|till)\b/i;
-const FLOAT_AMOUNT_REGEX = /\b(with|for|of|at)\b.+\$([\d,.]+)\b/i;
+const FLOAT_AMOUNT_REGEX = /\b(with|for|of|at)\b.+\$?([\d,.]+)\b/i;
+const ANALYTICS_REGEX = /\b(what|show|tell|how many|how much|top|best|most)\b.+\b(sales|revenue|products|selling|customers|vendors|analytics)\b/i;
+const STRAIN_INFO_REGEX = /\b(what|tell|info|information|about)\b.+\b(strain|type|is)\b/i;
 
 // Map word numbers to digits
 const WORD_TO_NUMBER = {
@@ -43,14 +48,25 @@ const WORD_TO_NUMBER = {
 /**
  * Parse a natural language command and determine the intent
  * @param {string} command - The natural language command
+ * @param {string} businessType - The business type (retail or grow)
  * @returns {Object} The parsed command with intent and parameters
  */
-export const parseCommand = async (command) => {
+export const parseCommand = async (command, businessType = 'retail') => {
   try {
     if (!command) return { type: INTENT_TYPES.UNKNOWN };
     
     // Convert command to lowercase for easier matching
     const lowerCommand = command.toLowerCase();
+    
+    // Check for analytics queries
+    if (ANALYTICS_REGEX.test(lowerCommand)) {
+      return await parseAnalyticsCommand(lowerCommand, command, businessType);
+    }
+    
+    // Check for strain information queries
+    if (STRAIN_INFO_REGEX.test(lowerCommand)) {
+      return await parseStrainInfoCommand(lowerCommand, command);
+    }
     
     // Check for add to cart intent
     if (ADD_CART_REGEX.test(lowerCommand)) {
@@ -88,10 +104,92 @@ export const parseCommand = async (command) => {
 };
 
 /**
+ * Parse an analytics command
+ */
+const parseAnalyticsCommand = async (lowerCommand, originalCommand, businessType) => {
+  try {
+    // Determine the time period
+    let period = 'today';
+    if (lowerCommand.includes('week')) period = 'week';
+    else if (lowerCommand.includes('month')) period = 'month';
+    else if (lowerCommand.includes('year')) period = 'year';
+    else if (lowerCommand.includes('all time')) period = 'all';
+    
+    // Get analytics data
+    const analytics = await getDashboardAnalytics(period);
+    
+    // Determine what specific information is being requested
+    let response = '';
+    
+    if (lowerCommand.includes('top') && lowerCommand.includes('product')) {
+      const topProducts = analytics.topProducts.slice(0, 5);
+      response = `Top selling products for ${period}: `;
+      response += topProducts.map((p, i) => 
+        `${i + 1}. ${p.name} (${p.quantitySold} units, $${p.revenue.toFixed(2)})`
+      ).join(', ');
+    } else if (lowerCommand.includes('revenue') || lowerCommand.includes('sales')) {
+      response = `Total revenue for ${period}: $${analytics.sales.totalRevenue.toFixed(2)} from ${analytics.sales.totalSales} sales. Average order value: $${analytics.sales.averageOrderValue.toFixed(2)}`;
+    } else if (lowerCommand.includes('inventory') || lowerCommand.includes('stock')) {
+      response = `Inventory status: ${analytics.inventory.totalProducts} products, ${analytics.inventory.totalStock} units in stock, total value $${analytics.inventory.totalValue.toFixed(2)}. ${analytics.inventory.lowStockCount} items low on stock, ${analytics.inventory.outOfStockCount} out of stock.`;
+    } else {
+      // General summary
+      response = `Analytics for ${period}: $${analytics.sales.totalRevenue.toFixed(2)} revenue from ${analytics.sales.totalSales} sales. Top product: ${analytics.topProducts[0]?.name || 'N/A'}. ${analytics.inventory.totalProducts} products in inventory.`;
+    }
+    
+    return {
+      type: INTENT_TYPES.ANALYTICS_QUERY,
+      analytics,
+      period,
+      response,
+      originalCommand
+    };
+  } catch (error) {
+    console.error('Error parsing analytics command:', error);
+    return {
+      type: INTENT_TYPES.ERROR,
+      error,
+      originalCommand
+    };
+  }
+};
+
+/**
+ * Parse a strain information command
+ */
+const parseStrainInfoCommand = async (lowerCommand, originalCommand) => {
+  try {
+    // Try to extract strain name
+    const strainMatches = searchStrains(lowerCommand);
+    
+    if (strainMatches.length > 0) {
+      const strain = strainMatches[0];
+      const response = `${strain.name} is a ${strain.type} strain.`;
+      
+      return {
+        type: INTENT_TYPES.STRAIN_INFO,
+        strain,
+        response,
+        originalCommand
+      };
+    }
+    
+    return {
+      type: INTENT_TYPES.UNKNOWN,
+      message: 'Could not identify the strain you\'re asking about.',
+      originalCommand
+    };
+  } catch (error) {
+    console.error('Error parsing strain info command:', error);
+    return {
+      type: INTENT_TYPES.ERROR,
+      error,
+      originalCommand
+    };
+  }
+};
+
+/**
  * Parse an add to cart command
- * @param {string} lowerCommand - Lowercase command
- * @param {string} originalCommand - Original command
- * @returns {Object} Parsed command with product and quantity
  */
 const parseAddToCartCommand = async (lowerCommand, originalCommand) => {
   // Extract quantity
@@ -102,28 +200,36 @@ const parseAddToCartCommand = async (lowerCommand, originalCommand) => {
     quantity = WORD_TO_NUMBER[quantityText] || parseInt(quantityText, 10) || 1;
   }
   
-  // Extract product type or name
-  let productQuery = '';
-  const typeMatch = lowerCommand.match(PRODUCT_TYPE_REGEX);
-  const nameMatch = lowerCommand.match(PRODUCT_NAME_REGEX);
+  // First try to match strain names
+  const strainMatches = searchStrains(lowerCommand);
   
-  if (nameMatch) {
-    productQuery = nameMatch[1];
-  } else if (typeMatch) {
-    productQuery = typeMatch[1];
+  if (strainMatches.length > 0) {
+    const strain = strainMatches[0];
+    const products = await searchProducts(strain.name);
+    
+    if (products && products.length > 0) {
+      return {
+        type: INTENT_TYPES.ADD_TO_CART,
+        product: products[0],
+        quantity,
+        strain,
+        originalCommand
+      };
+    }
   }
   
-  // If we have a product query, search for matching products
-  if (productQuery) {
+  // Fallback to product type matching
+  const typeMatch = lowerCommand.match(PRODUCT_TYPE_REGEX);
+  let productQuery = '';
+  
+  if (typeMatch) {
+    productQuery = typeMatch[1];
     const products = await searchProducts(productQuery);
     
     if (products && products.length > 0) {
-      // Use the first matching product
-      const product = products[0];
-      
       return {
         type: INTENT_TYPES.ADD_TO_CART,
-        product,
+        product: products[0],
         quantity,
         originalCommand
       };
@@ -140,9 +246,6 @@ const parseAddToCartCommand = async (lowerCommand, originalCommand) => {
 
 /**
  * Parse an inventory command
- * @param {string} lowerCommand - Lowercase command
- * @param {string} originalCommand - Original command
- * @returns {Object} Parsed command with filter parameters
  */
 const parseInventoryCommand = async (lowerCommand, originalCommand) => {
   // Check for filter criteria
@@ -150,49 +253,37 @@ const parseInventoryCommand = async (lowerCommand, originalCommand) => {
   const filterMatch = lowerCommand.match(INVENTORY_FILTER_REGEX);
   
   if (filterMatch) {
-    const filterType = filterMatch[2];
-    
-    // Determine filter type
-    if (['sativa', 'indica', 'hybrid'].includes(filterType)) {
-      filter = { field: 'type', value: filterType.charAt(0).toUpperCase() + filterType.slice(1) };
-    } else if (['flower', 'edible', 'concentrate'].includes(filterType)) {
-      filter = { field: 'category', value: filterType.charAt(0).toUpperCase() + filterType.slice(1) };
-    } else {
-      filter = { field: 'name', value: filterType };
-    }
+    filter = filterMatch[2];
   }
   
-  // Get products based on filter
-  let products;
+  // Get products
+  let products = await getProducts();
+  
+  // Apply filter if specified
   if (filter) {
-    const allProducts = await getProducts();
-    products = allProducts.filter(product => 
-      product[filter.field].toLowerCase().includes(filter.value.toLowerCase())
+    products = products.filter(p => 
+      p.type.toLowerCase() === filter.toLowerCase() ||
+      p.category.toLowerCase() === filter.toLowerCase()
     );
-  } else {
-    products = await getProducts();
   }
   
   return {
     type: INTENT_TYPES.SHOW_INVENTORY,
-    filter,
     products,
+    filter,
     originalCommand
   };
 };
 
 /**
  * Parse an open float command
- * @param {string} lowerCommand - Lowercase command
- * @param {string} originalCommand - Original command
- * @returns {Object} Parsed command with float amount
  */
 const parseOpenFloatCommand = async (lowerCommand, originalCommand) => {
   // Extract amount
   let amount = 200; // Default amount
   const amountMatch = lowerCommand.match(FLOAT_AMOUNT_REGEX);
   
-  if (amountMatch && amountMatch[2]) {
+  if (amountMatch) {
     amount = parseFloat(amountMatch[2].replace(/,/g, ''));
   }
   
@@ -205,218 +296,165 @@ const parseOpenFloatCommand = async (lowerCommand, originalCommand) => {
 
 /**
  * Parse a close float command
- * @param {string} lowerCommand - Lowercase command
- * @param {string} originalCommand - Original command
- * @returns {Object} Parsed command with float amount
  */
 const parseCloseFloatCommand = async (lowerCommand, originalCommand) => {
   // Extract amount
   let amount = null;
   const amountMatch = lowerCommand.match(FLOAT_AMOUNT_REGEX);
   
-  if (amountMatch && amountMatch[2]) {
+  if (amountMatch) {
     amount = parseFloat(amountMatch[2].replace(/,/g, ''));
   }
-  
-  // Get today's float
-  const todayFloat = await getTodayFloat();
   
   return {
     type: INTENT_TYPES.CLOSE_FLOAT,
     amount,
-    todayFloat,
     originalCommand
   };
 };
 
 /**
  * Execute a parsed command
- * @param {Object} parsedCommand - The parsed command object
- * @param {Object} callbacks - Callback functions for different actions
- * @returns {Object} Result of the command execution
  */
-export const executeCommand = async (parsedCommand, callbacks = {}) => {
-  const { 
-    onAddToCart, 
-    onShowInventory, 
-    onOpenFloat, 
-    onCloseFloat,
-    onUnknownCommand,
-    onError
-  } = callbacks;
-  
+export const executeCommand = async (parsedCommand, context = {}) => {
   try {
     switch (parsedCommand.type) {
       case INTENT_TYPES.ADD_TO_CART:
-        if (onAddToCart) {
-          await onAddToCart(parsedCommand.product, parsedCommand.quantity);
+        if (context.onAddToCart) {
+          context.onAddToCart(parsedCommand.product, parsedCommand.quantity);
         }
         return {
           success: true,
           message: `Added ${parsedCommand.quantity} ${parsedCommand.product.name} to cart`,
-          response: `Added ${parsedCommand.quantity} ${parsedCommand.product.name} to your cart.`,
-          result: parsedCommand
+          speak: true
+        };
+        
+      case INTENT_TYPES.ANALYTICS_QUERY:
+        return {
+          success: true,
+          message: parsedCommand.response,
+          data: parsedCommand.analytics,
+          speak: true
+        };
+        
+      case INTENT_TYPES.STRAIN_INFO:
+        return {
+          success: true,
+          message: parsedCommand.response,
+          data: parsedCommand.strain,
+          speak: true
         };
         
       case INTENT_TYPES.SHOW_INVENTORY:
-        if (onShowInventory) {
-          await onShowInventory(parsedCommand.filter, parsedCommand.products);
-        }
-        
-        const filterText = parsedCommand.filter 
-          ? `for ${parsedCommand.filter.value}` 
-          : '';
-          
         return {
           success: true,
-          message: `Showing inventory ${filterText}`,
-          response: `Here's the inventory ${filterText}. I found ${parsedCommand.products.length} products.`,
-          result: parsedCommand
+          message: `Found ${parsedCommand.products.length} products${parsedCommand.filter ? ` matching ${parsedCommand.filter}` : ''}`,
+          data: parsedCommand.products,
+          speak: true
         };
         
       case INTENT_TYPES.OPEN_FLOAT:
-        if (onOpenFloat) {
-          await onOpenFloat(parsedCommand.amount);
-        } else {
-          await initializeDailyFloat(parsedCommand.amount);
-        }
+        await initializeDailyFloat(parsedCommand.amount);
         return {
           success: true,
-          message: `Opened float with $${parsedCommand.amount.toFixed(2)}`,
-          response: `I've opened the cash float with $${parsedCommand.amount.toFixed(2)}.`,
-          result: parsedCommand
+          message: `Cash float opened with $${parsedCommand.amount.toFixed(2)}`,
+          speak: true
         };
         
       case INTENT_TYPES.CLOSE_FLOAT:
-        if (onCloseFloat) {
-          await onCloseFloat(parsedCommand.amount);
-        } else if (parsedCommand.amount !== null) {
+        if (parsedCommand.amount) {
           await closeDailyFloat(parsedCommand.amount);
+          return {
+            success: true,
+            message: `Cash float closed with ending amount $${parsedCommand.amount.toFixed(2)}`,
+            speak: true
+          };
+        } else {
+          const floatData = await getTodayFloat();
+          return {
+            success: true,
+            message: `Current float: Starting $${floatData.starting_amount}, Sales $${floatData.total_sales}`,
+            data: floatData,
+            speak: true
+          };
         }
         
-        const amountText = parsedCommand.amount !== null 
-          ? `with $${parsedCommand.amount.toFixed(2)}` 
-          : '';
-          
-        return {
-          success: true,
-          message: `Closed float ${amountText}`,
-          response: `I've closed the cash float ${amountText}.`,
-          result: parsedCommand
-        };
-        
       case INTENT_TYPES.SEARCH_PRODUCTS:
+        const products = await searchProducts(parsedCommand.query);
         return {
-          success: false,
-          message: `Couldn't find a product matching "${parsedCommand.query}"`,
-          response: `I couldn't find a product matching "${parsedCommand.query}". Please try again with a different product name.`,
-          result: parsedCommand
+          success: products.length > 0,
+          message: products.length > 0 
+            ? `Found ${products.length} products matching "${parsedCommand.query}"`
+            : `No products found matching "${parsedCommand.query}"`,
+          data: products,
+          speak: true
         };
         
       case INTENT_TYPES.UNKNOWN:
-        if (onUnknownCommand) {
-          onUnknownCommand(parsedCommand.originalCommand);
-        }
         return {
           success: false,
-          message: 'Command not recognized',
-          response: "I'm sorry, I didn't understand that command. Try saying something like 'Add 2 Blue Dream to cart' or 'Show inventory for sativa'.",
-          result: parsedCommand
-        };
-        
-      case INTENT_TYPES.ERROR:
-        if (onError) {
-          onError(parsedCommand.error);
-        }
-        return {
-          success: false,
-          message: 'Error processing command',
-          response: "Sorry, there was an error processing your command. Please try again.",
-          result: parsedCommand
+          message: 'I didn\'t understand that command. Try asking about sales, inventory, or products.',
+          speak: true
         };
         
       default:
-        if (onUnknownCommand) {
-          onUnknownCommand(parsedCommand.originalCommand);
-        }
         return {
           success: false,
-          message: 'Unknown result type',
-          response: "I'm not sure how to process that command. Please try something else.",
-          result: parsedCommand
+          message: 'Command not supported',
+          speak: true
         };
     }
   } catch (error) {
     console.error('Error executing command:', error);
-    if (onError) {
-      onError(error);
-    }
     return {
       success: false,
-      message: 'Error handling command',
-      response: "Sorry, there was an error while processing your request. Please try again.",
-      error
+      message: 'Error executing command',
+      error,
+      speak: true
     };
   }
 };
 
 /**
- * Process a natural language command
- * @param {string} command - The natural language command
- * @param {Object} callbacks - Callback functions for different actions
- * @returns {Object} Result of the command processing
+ * Speak a response
  */
-export const processCommand = async (command, callbacks = {}) => {
+export const speak = (text) => {
+  if (Platform.OS !== 'web') {
+    Speech.speak(text, {
+      language: 'en',
+      pitch: 1.0,
+      rate: 0.9
+    });
+  }
+};
+
+/**
+ * Process a natural language query
+ */
+export const processQuery = async (query, context = {}) => {
   try {
-    const parsedCommand = await parseCommand(command);
-    return await executeCommand(parsedCommand, callbacks);
-  } catch (error) {
-    console.error('Error processing command:', error);
-    if (callbacks.onError) {
-      callbacks.onError(error);
+    const parsedCommand = await parseCommand(query, context.businessType);
+    const result = await executeCommand(parsedCommand, context);
+    
+    if (result.speak && result.message) {
+      speak(result.message);
     }
+    
+    return result;
+  } catch (error) {
+    console.error('Error processing query:', error);
     return {
       success: false,
-      message: 'Error processing command',
-      response: "Sorry, there was an error processing your command. Please try again.",
+      message: 'Error processing your request',
       error
     };
   }
 };
 
-/**
- * Speak a response using text-to-speech
- * @param {string} text - The text to speak
- * @param {Object} options - Speech options
- */
-export const speakResponse = (text, options = {}) => {
-  Speech.speak(text, {
-    language: 'en',
-    pitch: 1.0,
-    rate: 0.9,
-    ...options
-  });
+export default {
+  parseCommand,
+  executeCommand,
+  speak,
+  processQuery,
+  INTENT_TYPES
 };
-
-/**
- * Check if the device supports voice recognition
- * @returns {boolean} Whether voice recognition is supported
- */
-export const isVoiceRecognitionSupported = () => {
-  // In a real app, you would check if the device supports voice recognition
-  // For now, we'll return true for mobile platforms and false for web
-  return Platform.OS !== 'web';
-};
-
-/**
- * Request voice recognition permissions
- * @returns {Promise<boolean>} Whether permissions were granted
- */
-export const requestVoicePermissions = async () => {
-  // In a real app, you would request microphone permissions
-  // For now, we'll just return true
-  return true;
-};
-
-// Export intent types for use in other components
-export { INTENT_TYPES };

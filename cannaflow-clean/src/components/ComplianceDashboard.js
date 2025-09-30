@@ -9,12 +9,13 @@ import {
   Alert,
   Platform
 } from 'react-native';
-import { useTheme } from 'react-native-paper';
+import { useTheme, Switch, Card, Title } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { LineChart, BarChart, PieChart } from 'react-native-chart-kit';
 import { Dimensions } from 'react-native';
 import { AIContext } from '../context/AIContext';
+import { useComplianceMode } from '../context/ComplianceModeContext';
 import {
   getComplianceLogs,
   getComplianceStats,
@@ -31,6 +32,7 @@ const screenWidth = Dimensions.get('window').width;
 const ComplianceDashboard = ({ onClose }) => {
   const theme = useTheme();
   const { complianceSettings } = useContext(AIContext);
+  const { complianceMode, toggleComplianceMode } = useComplianceMode();
   
   const [activeTab, setActiveTab] = useState('overview');
   const [isLoading, setIsLoading] = useState(true);

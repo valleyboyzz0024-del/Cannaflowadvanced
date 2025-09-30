@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
-import { StyleSheet,
+import {
+  StyleSheet,
   View,
   ScrollView,
   Alert,
-  Linking  ,
+  Linking,
   Text
 } from 'react-native';
-import { 
+import {
   Surface,
   Title,
   Button,
@@ -16,16 +17,22 @@ import {
   Portal,
   Dialog,
   TextInput,
-  IconButton
+  IconButton,
+  Chip,
+  Card
 } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
+import { useBusinessType, BUSINESS_TYPES } from '../context/BusinessTypeContext';
+import { useComplianceMode } from '../context/ComplianceModeContext';
 import { changePassword } from '../services/authService';
 import { theme, shadowStyles } from '../theme/theme';
 
 const SettingsScreen = ({ navigation }) => {
   const { user, signOut } = useAuth();
-  const [darkMode, setDarkMode] = useState(true); // Always true for this app
+  const { businessType, isRetail, isGrow, clearBusinessType } = useBusinessType();
+  const { complianceMode, toggleComplianceMode } = useComplianceMode();
+  const [darkMode, setDarkMode] = useState(true);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -33,29 +40,28 @@ const SettingsScreen = ({ navigation }) => {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [processing, setProcessing] = useState(false);
-  
+
   const handleChangePassword = async () => {
     try {
-      // Validate inputs
       if (!currentPassword || !newPassword || !confirmPassword) {
         Alert.alert('Validation Error', 'All fields are required');
         return;
       }
-      
+
       if (newPassword !== confirmPassword) {
         Alert.alert('Validation Error', 'New passwords do not match');
         return;
       }
-      
+
       if (newPassword.length < 6) {
         Alert.alert('Validation Error', 'New password must be at least 6 characters');
         return;
       }
-      
+
       setProcessing(true);
-      
+
       const result = await changePassword(user.id, currentPassword, newPassword);
-      
+
       if (result.success) {
         setShowPasswordDialog(false);
         setCurrentPassword('');
@@ -72,153 +78,240 @@ const SettingsScreen = ({ navigation }) => {
       setProcessing(false);
     }
   };
-  
-  const handleLogout = () => {
+
+  const handleToggleComplianceMode = async () => {
+    const newMode = await toggleComplianceMode();
     Alert.alert(
-      'Confirm Logout',
-      'Are you sure you want to log out?',
+      'Compliance Mode',
+      `Compliance mode ${newMode ? 'enabled' : 'disabled'}`
+    );
+  };
+
+  const handleChangeBusinessType = () => {
+    Alert.alert(
+      'Change Business Type',
+      'Changing business type will log you out. Continue?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Logout', 
+        {
+          text: 'Continue',
           onPress: async () => {
+            await clearBusinessType();
             await signOut();
             navigation.reset({
               index: 0,
-              routes: [{ name: 'Login' }] });
+              routes: [{ name: 'BusinessTypeSelection' }]
+            });
           },
           style: 'destructive'
         }
       ]
     );
   };
-  
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Confirm Logout',
+      'Are you sure you want to log out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Logout',
+          onPress: async () => {
+            await signOut();
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'Login' }]
+            });
+          },
+          style: 'destructive'
+        }
+      ]
+    );
+  };
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+      {/* Business Type Section */}
+      <Surface style={[styles.section, shadowStyles.medium]}>
+        <Title style={styles.sectionTitle}>Business Configuration</Title>
+        <Divider style={styles.divider} />
+        
+        <View style={styles.businessTypeContainer}>
+          <Text style={styles.label}>Business Type</Text>
+          <Chip
+            icon={isRetail ? 'store' : 'sprout'}
+            mode="flat"
+            style={styles.businessTypeChip}
+          >
+            {isRetail ? 'Retail Store' : 'Licensed Producer'}
+          </Chip>
+        </View>
+
+        <Button
+          mode="outlined"
+          onPress={handleChangeBusinessType}
+          style={styles.changeButton}
+          icon="swap-horizontal"
+        >
+          Change Business Type
+        </Button>
+      </Surface>
+
+      {/* Compliance Mode Section */}
+      <Surface style={[styles.section, shadowStyles.medium]}>
+        <Title style={styles.sectionTitle}>Compliance Settings</Title>
+        <Divider style={styles.divider} />
+        
+        <List.Item
+          title="Compliance Mode"
+          description="Enable detailed compliance tracking and reporting"
+          left={props => <List.Icon {...props} icon="clipboard-check" />}
+          right={() => (
+            <Switch
+              value={complianceMode}
+              onValueChange={handleToggleComplianceMode}
+              color={theme.colors.primary}
+            />
+          )}
+        />
+      </Surface>
+
+      {/* Account Section */}
       <Surface style={[styles.section, shadowStyles.medium]}>
         <Title style={styles.sectionTitle}>Account</Title>
         <Divider style={styles.divider} />
-        
+
         <List.Item
           title="Username"
           description={user?.username || 'Not logged in'}
-          left={props => <List.Icon {...props} icon="account" color={theme.colors.primary} />}
+          left={props => <List.Icon {...props} icon="account" />}
         />
-        
+
         <List.Item
           title="Role"
-          description={user?.role || 'Not assigned'}
-          left={props => <List.Icon {...props} icon="shield-account" color={theme.colors.primary} />}
+          description={user?.role || 'N/A'}
+          left={props => <List.Icon {...props} icon="shield-account" />}
         />
-        
-        <List.Item
-          title="Change Password"
-          left={props => <List.Icon {...props} icon="lock" color={theme.colors.primary} />}
+
+        <Button
+          mode="outlined"
           onPress={() => setShowPasswordDialog(true)}
-          right={props => <List.Icon {...props} icon="chevron-right" />}
-        />
+          style={styles.button}
+          icon="lock-reset"
+        >
+          Change Password
+        </Button>
       </Surface>
-      
+
+      {/* App Settings */}
       <Surface style={[styles.section, shadowStyles.medium]}>
-        <Title style={styles.sectionTitle}>Business Management</Title>
+        <Title style={styles.sectionTitle}>App Settings</Title>
         <Divider style={styles.divider} />
-        
+
+        <List.Item
+          title="Dark Mode"
+          description="Always enabled for optimal viewing"
+          left={props => <List.Icon {...props} icon="theme-light-dark" />}
+          right={() => (
+            <Switch
+              value={darkMode}
+              disabled={true}
+              color={theme.colors.primary}
+            />
+          )}
+        />
+
         <List.Item
           title="Cash Float Management"
-          description="Manage daily cash float and view history"
-          left={props => <List.Icon {...props} icon="cash" color={theme.colors.primary} />}
+          description="Manage daily cash float"
+          left={props => <List.Icon {...props} icon="cash-multiple" />}
           onPress={() => navigation.navigate('CashFloat')}
           right={props => <List.Icon {...props} icon="chevron-right" />}
         />
       </Surface>
-      
+
+      {/* About Section */}
       <Surface style={[styles.section, shadowStyles.medium]}>
-        <Title style={styles.sectionTitle}>App Settings</Title>
+        <Title style={styles.sectionTitle}>About</Title>
         <Divider style={styles.divider} />
-        
+
         <List.Item
-          title="Dark Mode"
-          left={props => <List.Icon {...props} icon="theme-light-dark" color={theme.colors.primary} />}
-          right={() => <Switch value={darkMode} disabled />}
-        />
-        
-        <List.Item
-          title="App Version"
+          title="Version"
           description="1.0.0"
-          left={props => <List.Icon {...props} icon="information" color={theme.colors.primary} />}
+          left={props => <List.Icon {...props} icon="information" />}
+        />
+
+        <List.Item
+          title="Support"
+          description="Get help and support"
+          left={props => <List.Icon {...props} icon="help-circle" />}
+          onPress={() => Linking.openURL('mailto:support@cannaflow.com')}
+          right={props => <List.Icon {...props} icon="chevron-right" />}
         />
       </Surface>
-      
+
+      {/* Logout Button */}
       <Button
         mode="contained"
         onPress={handleLogout}
         style={styles.logoutButton}
-        contentStyle={styles.logoutButtonContent}
         icon="logout"
+        buttonColor={theme.colors.error}
       >
         Logout
       </Button>
-      
+
+      {/* Password Change Dialog */}
       <Portal>
-        <Dialog
-          visible={showPasswordDialog}
-          onDismiss={() => setShowPasswordDialog(false)}
-          style={styles.dialog}
-        >
-          <Dialog.Title style={styles.dialogTitle}>Change Password</Dialog.Title>
+        <Dialog visible={showPasswordDialog} onDismiss={() => setShowPasswordDialog(false)}>
+          <Dialog.Title>Change Password</Dialog.Title>
           <Dialog.Content>
             <TextInput
               label="Current Password"
               value={currentPassword}
               onChangeText={setCurrentPassword}
               secureTextEntry={!showCurrentPassword}
-              style={styles.dialogInput}
+              style={styles.input}
               mode="outlined"
               right={
-                <TextInput.Icon 
-                  icon={showCurrentPassword ? "eye-off" : "eye"} 
-                  color={theme.colors.primary}
-                  onPress={() => setShowCurrentPassword(!showCurrentPassword)} 
+                <TextInput.Icon
+                  icon={showCurrentPassword ? "eye-off" : "eye"}
+                  onPress={() => setShowCurrentPassword(!showCurrentPassword)}
                 />
               }
             />
-            
             <TextInput
               label="New Password"
               value={newPassword}
               onChangeText={setNewPassword}
               secureTextEntry={!showNewPassword}
-              style={styles.dialogInput}
+              style={styles.input}
               mode="outlined"
               right={
-                <TextInput.Icon 
-                  icon={showNewPassword ? "eye-off" : "eye"} 
-                  color={theme.colors.primary}
-                  onPress={() => setShowNewPassword(!showNewPassword)} 
+                <TextInput.Icon
+                  icon={showNewPassword ? "eye-off" : "eye"}
+                  onPress={() => setShowNewPassword(!showNewPassword)}
                 />
               }
             />
-            
             <TextInput
               label="Confirm New Password"
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               secureTextEntry={!showNewPassword}
-              style={styles.dialogInput}
+              style={styles.input}
               mode="outlined"
             />
           </Dialog.Content>
           <Dialog.Actions>
-            <Button onPress={() => setShowPasswordDialog(false)} color={theme.colors.text}>
-              Cancel
-            </Button>
-            <Button 
-              onPress={handleChangePassword} 
-              mode="contained" 
+            <Button onPress={() => setShowPasswordDialog(false)}>Cancel</Button>
+            <Button
+              onPress={handleChangePassword}
               loading={processing}
-              disabled={processing || !currentPassword || !newPassword || !confirmPassword}
+              disabled={processing}
             >
-              Change Password
+              Change
             </Button>
           </Dialog.Actions>
         </Dialog>
@@ -230,34 +323,54 @@ const SettingsScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background },
+    backgroundColor: theme.colors.background,
+  },
   contentContainer: {
     padding: 16,
-    paddingBottom: 24 },
+    paddingBottom: 32,
+  },
   section: {
-    borderRadius: 10,
-    padding: 16,
     marginBottom: 16,
-    backgroundColor: theme.colors.surface },
+    padding: 16,
+    borderRadius: 8,
+    backgroundColor: theme.colors.surface,
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: theme.colors.primary },
+    color: theme.colors.text,
+    marginBottom: 8,
+  },
   divider: {
-    marginVertical: 12 },
-  logoutButton: {
-    marginTop: 8,
-    backgroundColor: theme.colors.error,
-    borderRadius: 8 },
-  logoutButtonContent: {
-    height: 50 },
-  dialog: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: 15 },
-  dialogTitle: {
-    color: theme.colors.primary },
-  dialogInput: {
     marginBottom: 16,
-    backgroundColor: theme.colors.surface } });
+    backgroundColor: theme.colors.border,
+  },
+  businessTypeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  label: {
+    fontSize: 16,
+    color: theme.colors.text,
+  },
+  businessTypeChip: {
+    backgroundColor: theme.colors.primary,
+  },
+  changeButton: {
+    marginTop: 8,
+  },
+  button: {
+    marginTop: 16,
+  },
+  logoutButton: {
+    marginTop: 16,
+    marginBottom: 32,
+  },
+  input: {
+    marginBottom: 12,
+  },
+});
 
 export default SettingsScreen;

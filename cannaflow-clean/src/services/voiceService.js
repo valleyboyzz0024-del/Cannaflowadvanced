@@ -1,11 +1,11 @@
 import * as Speech from 'expo-speech';
 import { searchProducts } from './productService';
 import { Platform } from 'react-native';
+import { searchStrains, getStrainType, STRAIN_TYPES } from '../data/strainDatabase';
 
 // Regular expressions for parsing voice commands
 const QUANTITY_REGEX = /\b(one|two|three|four|five|six|seven|eight|nine|ten|\d+)\b/i;
 const PRODUCT_TYPE_REGEX = /\b(sativa|indica|hybrid|flower|edible|concentrate|cbd|oil|gummies|pre-roll|vape)\b/i;
-const PRODUCT_NAME_REGEX = /\b(blue dream|og kush|sour diesel|girl scout cookies|purple punch|jack herer|northern lights|pineapple express|cbd oil|thc gummies)\b/i;
 
 // Map word numbers to digits
 const WORD_TO_NUMBER = {
@@ -77,6 +77,26 @@ export const stopVoiceRecognition = () => {
   return true;
 };
 
+// Enhanced strain recognition
+export const recognizeStrain = (text) => {
+  const normalizedText = text.toLowerCase().trim();
+  const matches = searchStrains(normalizedText);
+  
+  if (matches.length > 0) {
+    return {
+      found: true,
+      strain: matches[0],
+      allMatches: matches
+    };
+  }
+  
+  return {
+    found: false,
+    strain: null,
+    allMatches: []
+  };
+};
+
 export const parseVoiceCommand = async (command) => {
   try {
     if (!command) return null;
@@ -100,23 +120,35 @@ export const parseVoiceCommand = async (command) => {
       quantity = WORD_TO_NUMBER[quantityText] || parseInt(quantityText, 10) || 1;
     }
     
-    // Extract product type or name
-    let productQuery = '';
-    const typeMatch = lowerCommand.match(PRODUCT_TYPE_REGEX);
-    const nameMatch = lowerCommand.match(PRODUCT_NAME_REGEX);
+    // First try to match strain names from our comprehensive database
+    const strainResult = recognizeStrain(lowerCommand);
     
-    if (nameMatch) {
-      productQuery = nameMatch[1];
-    } else if (typeMatch) {
-      productQuery = typeMatch[1];
+    if (strainResult.found) {
+      // Search for products matching this strain
+      const products = await searchProducts(strainResult.strain.name);
+      
+      if (products && products.length > 0) {
+        const product = products[0];
+        
+        return {
+          type: 'add_to_cart',
+          product,
+          quantity,
+          strain: strainResult.strain,
+          originalCommand: command
+        };
+      }
     }
     
-    // If we have a product query, search for matching products
-    if (productQuery) {
+    // Fallback to product type matching
+    const typeMatch = lowerCommand.match(PRODUCT_TYPE_REGEX);
+    let productQuery = '';
+    
+    if (typeMatch) {
+      productQuery = typeMatch[1];
       const products = await searchProducts(productQuery);
       
       if (products && products.length > 0) {
-        // Use the first matching product
         const product = products[0];
         
         return {
@@ -131,7 +163,8 @@ export const parseVoiceCommand = async (command) => {
     // If we couldn't find a matching product
     return {
       type: 'product_not_found',
-      query: productQuery || command,
+      query: strainResult.found ? strainResult.strain.name : (productQuery || command),
+      suggestions: strainResult.allMatches.slice(0, 5),
       originalCommand: command
     };
   } catch (error) {
@@ -158,7 +191,8 @@ export const handleVoiceCommand = async (command, onAddToCart) => {
     
     switch (result.type) {
       case 'add_to_cart':
-        speakResponse(`Adding ${result.quantity} ${result.product.name} to cart`);
+        const strainInfo = result.strain ? ` - a ${result.strain.type} strain` : '';
+        speakResponse(`Adding ${result.quantity} ${result.product.name}${strainInfo} to cart`);
         if (onAddToCart) {
           onAddToCart(result.product, result.quantity);
         }
@@ -169,7 +203,10 @@ export const handleVoiceCommand = async (command, onAddToCart) => {
         };
         
       case 'product_not_found':
-        speakResponse(`Sorry, I couldn't find a product matching ${result.query}`);
+        const suggestions = result.suggestions && result.suggestions.length > 0
+          ? ` Did you mean ${result.suggestions[0].name}?`
+          : '';
+        speakResponse(`Sorry, I couldn't find a product matching ${result.query}.${suggestions}`);
         return {
           success: false,
           message: `Couldn't find a product matching "${result.query}"`,
@@ -223,4 +260,41 @@ export const requestVoicePermissions = async () => {
   // In a real app, you would request microphone permissions
   // For now, we'll just return true
   return true;
+};
+
+// Get strain information
+export const getStrainInfo = (strainName) => {
+  const type = getStrainType(strainName);
+  if (type) {
+    return {
+      name: strainName,
+      type,
+      description: `${strainName} is a ${type} strain`
+    };
+  }
+  return null;
+};
+
+// Parse inventory command with strain recognition
+export const parseInventoryCommand = (text) => {
+  const normalizedText = text.toLowerCase().trim();
+  
+  // Check for strain name
+  const strainResult = recognizeStrain(normalizedText);
+  
+  // Extract quantity if present
+  const quantityMatch = normalizedText.match(/(\d+)\s*(gram|grams|g|ounce|ounces|oz|unit|units)?/i);
+  const quantity = quantityMatch ? parseInt(quantityMatch[1]) : null;
+  
+  // Extract price if present
+  const priceMatch = normalizedText.match(/\$?(\d+\.?\d*)/);
+  const price = priceMatch ? parseFloat(priceMatch[1]) : null;
+  
+  return {
+    strain: strainResult.found ? strainResult.strain : null,
+    quantity,
+    price,
+    rawText: text,
+    suggestions: strainResult.allMatches.slice(0, 5)
+  };
 };

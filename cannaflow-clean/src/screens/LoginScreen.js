@@ -62,7 +62,7 @@ const LoginScreen = ({ navigation }) => {
         <Surface style={styles.loginContainer}>
           <View style={styles.logoContainer}>
             <Image 
-              source={require('../../assets/new/cannaflow-logo.png')} 
+              source={require('../../assets/cannaflow-logo-black.png')} 
               style={styles.logo} 
               resizeMode="contain"
             />
