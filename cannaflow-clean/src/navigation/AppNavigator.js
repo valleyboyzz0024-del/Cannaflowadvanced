@@ -24,6 +24,7 @@ import AnalyticsScreen from '../screens/AnalyticsScreen';
 import ComplianceDashboard from '../components/ComplianceDashboard';
 import CheckoutFlow from '../components/CheckoutFlow';
 import ComplianceChecker from '../components/ComplianceChecker';
+import ScannerTestScreen from '../screens/ScannerTestScreen';
 
 import { theme } from '../theme/theme';
 import AIFloatingButton from '../components/AIFloatingButton';
@@ -146,6 +147,15 @@ const RetailTabs = () => {
             ),
           }}
         />
+        <Tab.Screen 
+          name="ScannerTest" 
+          component={ScannerTestScreen} 
+          options={{
+            tabBarIcon: ({ color, size }) => (
+              <MaterialCommunityIcons name="barcode-scan" color={color} size={size} />
+            ),
+          }}
+        />
       </Tab.Navigator>
       
       <AIFloatingButton onAddToCart={handleAddToCart} />
@@ -214,6 +224,15 @@ const GrowTabs = () => {
           options={{
             tabBarIcon: ({ color, size }) => (
               <MaterialCommunityIcons name="cog" color={color} size={size} />
+            ),
+          }}
+        />
+        <Tab.Screen 
+          name="ScannerTest" 
+          component={ScannerTestScreen} 
+          options={{
+            tabBarIcon: ({ color, size }) => (
+              <MaterialCommunityIcons name="barcode-scan" color={color} size={size} />
             ),
           }}
         />
