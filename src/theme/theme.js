@@ -1,0 +1,224 @@
+import { DefaultTheme } from 'react-native-paper';
+
+// Updated theme with CannaFlow branding colors
+export const theme = {
+  ...DefaultTheme,
+  dark: true,
+  mode: 'adaptive',
+  roundness: 10,
+  
+  // Explicitly define fontVariant to prevent undefined errors
+  fontVariant: 'regular',
+  
+  colors: {
+    ...DefaultTheme.colors,
+    primary: '#1E8942', // Main green from CannaFlow logo
+    accent: '#4ECBA5',  // Lighter green from CannaFlow logo
+    secondary: '#1E8942', // Secondary color
+    background: '#121212',
+    surface: '#1E1E1E',
+    text: '#FFFFFF',
+    disabled: '#757575',
+    placeholder: '#9E9E9E',
+    backdrop: 'rgba(0, 0, 0, 0.5)',
+    notification: '#1E8942',
+    error: '#CF6679',
+    success: '#4CAF50',
+    warning: '#FF9800',
+    info: '#2196F3',
+    onSurface: '#FFFFFF',
+    secondaryContainer: '#2E2E2E',
+    card: '#1E1E1E',
+    border: '#2E2E2E',
+  },
+  
+  // Use simple font configuration without complex processing
+  fonts: {
+    // Basic variants
+    regular: {
+      fontFamily: 'System',
+      fontWeight: 'normal',
+    },
+    medium: {
+      fontFamily: 'System',
+      fontWeight: '500',
+    },
+    light: {
+      fontFamily: 'System',
+      fontWeight: '300',
+    },
+    thin: {
+      fontFamily: 'System',
+      fontWeight: '100',
+    },
+    bold: {
+      fontFamily: 'System',
+      fontWeight: 'bold',
+    },
+    heavy: {
+      fontFamily: 'System',
+      fontWeight: '900',
+    },
+    
+    // Body variants
+    bodySmall: {
+      fontFamily: 'System',
+      fontWeight: 'normal',
+      fontSize: 12,
+    },
+    bodyMedium: {
+      fontFamily: 'System',
+      fontWeight: 'normal',
+      fontSize: 14,
+    },
+    bodyLarge: {
+      fontFamily: 'System',
+      fontWeight: 'normal',
+      fontSize: 16,
+    },
+    
+    // Title variants
+    titleSmall: {
+      fontFamily: 'System',
+      fontWeight: '500',
+      fontSize: 14,
+    },
+    titleMedium: {
+      fontFamily: 'System',
+      fontWeight: '500',
+      fontSize: 16,
+    },
+    titleLarge: {
+      fontFamily: 'System',
+      fontWeight: '500',
+      fontSize: 20,
+    },
+    
+    // Label variants
+    labelSmall: {
+      fontFamily: 'System',
+      fontWeight: '500',
+      fontSize: 10,
+    },
+    labelMedium: {
+      fontFamily: 'System',
+      fontWeight: '500',
+      fontSize: 12,
+    },
+    labelLarge: {
+      fontFamily: 'System',
+      fontWeight: '500',
+      fontSize: 14,
+    },
+    
+    // Heading variants
+    headlineSmall: {
+      fontFamily: 'System',
+      fontWeight: 'bold',
+      fontSize: 24,
+    },
+    headlineMedium: {
+      fontFamily: 'System',
+      fontWeight: 'bold',
+      fontSize: 28,
+    },
+    headlineLarge: {
+      fontFamily: 'System',
+      fontWeight: 'bold',
+      fontSize: 32,
+    },
+    
+    // Display variants
+    displaySmall: {
+      fontFamily: 'System',
+      fontWeight: 'bold',
+      fontSize: 36,
+    },
+    displayMedium: {
+      fontFamily: 'System',
+      fontWeight: 'bold',
+      fontSize: 45,
+    },
+    displayLarge: {
+      fontFamily: 'System',
+      fontWeight: 'bold',
+      fontSize: 57,
+    }
+  },
+  
+  // Font sizes explicitly defined to prevent crashes
+  fontSizes: {
+    small: 12,
+    medium: 14,
+    large: 16,
+    xlarge: 20,
+    xxlarge: 24,
+    xxxlarge: 32
+  }
+};
+
+export const buttonStyles = {
+  large: {
+    height: 60,
+    marginVertical: 10,
+    borderRadius: 10,
+    justifyContent: 'center',
+  },
+  medium: {
+    height: 50,
+    marginVertical: 8,
+    borderRadius: 8,
+    justifyContent: 'center',
+  },
+  small: {
+    height: 40,
+    marginVertical: 5,
+    borderRadius: 6,
+    justifyContent: 'center',
+  },
+};
+
+export const shadowStyles = {
+  small: {
+    boxShadowColor: '#000',
+    boxShadowOffset: { width: 0, height: 2 },
+    boxShadowOpacity: 0.25,
+    boxShadowRadius: 3.84,
+    elevation: 2,
+  },
+  medium: {
+    boxShadowColor: '#000',
+    boxShadowOffset: { width: 0, height: 4 },
+    boxShadowOpacity: 0.3,
+    boxShadowRadius: 4.65,
+    elevation: 4,
+  },
+  large: {
+    boxShadowColor: '#000',
+    boxShadowOffset: { width: 0, height: 6 },
+    boxShadowOpacity: 0.37,
+    boxShadowRadius: 7.49,
+    elevation: 6,
+  },
+};
+
+// Helper function to safely access theme properties
+export const getThemeValue = (obj, path, fallback = '') => {
+  try {
+    const keys = path.split('.');
+    let result = obj;
+    
+    for (const key of keys) {
+      if (result && typeof result === 'object' && key in result) {
+        result = result[key];
+      } else {
+        return fallback;
+      }
+    }
+    
+    return result || fallback;
+  } catch (error) {
+    console.warn(`Error accessing theme path: ${path}`, error);
+    return fallback;
+  }
+};
